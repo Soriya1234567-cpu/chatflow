@@ -170,7 +170,8 @@ values (
   26214400,
   array[
     'image/jpeg', 'image/png', 'image/webp',
-    'video/mp4', 'video/webm'
+    'video/mp4', 'video/webm',
+    'audio/webm', 'audio/ogg', 'audio/mp4'
   ]
 )
 on conflict (id) do update set

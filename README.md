@@ -6,13 +6,14 @@ A real-time private and group chat starter built with HTML, CSS, vanilla JavaScr
 
 - Email/password sign-up and sign-in
 - Editable profiles with display name, username, bio, status, and managed avatars
-- Private conversations and named group chats
+- Private conversations and named group chats with contact selection and owner-managed names/photos
 - Real-time message inserts without refresh
 - Message history stored in PostgreSQL
 - Cursor-paginated message history
 - Author-only message editing and deletion
 - Emoji reactions and read receipts
-- Private photo and video attachments
+- Private photo, video, and voice message attachments
+- Voice recording with pause/resume, preview, and cancel
 - Typing indicator (Realtime Broadcast)
 - Conversation search, responsive mobile layout, installable PWA shell
 - PostgreSQL Row Level Security (RLS)
@@ -37,6 +38,7 @@ A real-time private and group chat starter built with HTML, CSS, vanilla JavaScr
 9. For easiest local testing, keep email confirmation enabled and confirm both test accounts from their email inboxes. Alternatively, disable email confirmation only in a private development project.
 10. Run `supabase/messaging_media.sql` to add messaging support and create the private `chat-attachments` bucket with member-scoped Storage policies.
 11. Run `supabase/notifications.sql` to add unread-count RPCs and private notification preference/subscription tables.
+12. Run `supabase/group_chat_management.sql` to add group photos and owner-only group detail updates.
 
 Never put a `service_role` or secret key in `js/config.js`, source control, or any browser code.
 
@@ -89,10 +91,13 @@ Service workers require HTTPS or localhost. Do not open the HTML file directly.
 6. From User A, press `+`, choose **Private message**, enter User B's registered email, and create the conversation.
 7. Send a message. It should appear in User B's open conversation without a page refresh.
 8. Test the typing indicator by typing in one session.
-9. Create a group by entering two or more registered email addresses and a group name.
-10. Send text, photos, and videos between the two users; verify photo/video previews, reactions, visible-message read receipts, editing, and deletion.
-11. Try canceling an in-progress photo/video upload.
-12. Load older messages and confirm only conversation members can open signed attachment links.
+9. Create a group by selecting existing direct-chat contacts and/or entering registered email addresses, then provide a group name.
+10. Open a group’s **Conversation info** to change its name or photo (only the group creator can edit these details).
+11. In a group’s **Conversation info**, add contacts from your direct chats; verify only new members gain access to the group.
+12. As the group creator, delete a test group and confirm it disappears for all members. Verify a non-owner cannot delete it.
+13. Send text, photos, videos, and voice messages between the two users; verify previews, reactions, visible-message read receipts, editing, and deletion.
+14. Record a voice message, pause/resume it, stop and preview it, then try canceling a recording and an in-progress upload.
+15. Load older messages and confirm only conversation members can open signed attachment links.
 
 Each browser session must be signed into a different user. If email confirmation is enabled, confirm each account before signing in.
 
@@ -102,17 +107,21 @@ Each browser session must be signed into a different user. If email confirmation
 - The service worker caches the static app shell only.
 - Authentication, message history, and live messaging require a network connection. Offline caching does not make the backend or message sending work offline.
 - Unread counts reconcile from database read receipts after reconnect. Browser notifications require the page/service worker and permission; delivery while the PWA is closed requires the separately deployed Web Push backend below.
-- If you change static assets, bump `CACHE_NAME` in `service-worker.js` (for example `chatflow-shell-v16`).
+- If you change static assets, bump `CACHE_NAME` in `service-worker.js` (for example `chatflow-shell-v20`).
 
 ## 6. Messaging and attachment setup
 
 - Run the incremental `supabase/messaging_media.sql` migration after the original schema. It adds message metadata, reactions, read receipts, author-only edit/delete policies, a private attachment bucket, and Storage RLS policies.
-- If messaging media was already configured, rerun the updated `supabase/messaging_media.sql` to restrict the attachment bucket to photos and videos.
+- Run `supabase/group_chat_management.sql` after `schema.sql` and the messaging/profile migrations. It adds the `group_avatar_path` column and private `group-avatars` bucket, a function allowing group members to add their direct-chat contacts, and an owner-only group deletion function. Group creators (not other members) can update group names/photos. Existing deployments must apply this migration before using group management.
+- If messaging media was already configured, rerun the updated `supabase/messaging_media.sql` to allow voice messages alongside photo and video uploads.
 - If `messaging_media.sql` was applied before its Storage policies were scoped by bucket, run `supabase/storage_policy_scope_fix.sql` once before `profile_discovery.sql`. The restrictive attachment policies must apply only to `chat-attachments`, not unrelated Storage buckets such as `avatars`.
 - The attachment picker accepts JPEG, PNG, and WebP photos plus MP4 and WebM videos. Files are limited to 25 MB and checked against their content signatures in the browser as well as bucket MIME/size limits.
+- Use the microphone button beside the composer to record a voice message. The photo/video picker remains limited to images and videos.
 - Images and media use short-lived signed URLs. Only authenticated members of the conversation can read its objects; uploads use random object names under the conversation and uploader IDs.
+- Group creation can combine selected direct-chat contacts with registered emails; duplicate members are removed before the creation RPC runs. Any group member can add contacts from their own direct chats in **Conversation info**. The database function validates contact relationships and limits groups to 51 members. Only the creator can change group names/photos or delete the group. Deletion removes the group, membership, messages, and message metadata from the database; private Storage objects for attachments or the group photo may remain orphaned and inaccessible because attachment deletion is limited to the uploader and group-photo access is scoped to an existing group.
 - Text messages are loaded in pages of 50. Use **Load earlier messages** to fetch older history.
 - Uploads use a single Storage request with progress and cancellation, and are capped at 25 MB. Resumable large-file uploads are not implemented.
+- Voice recording requires microphone permission and a secure browser context (HTTPS or localhost). Recordings can be paused/resumed, stopped, previewed, discarded, and then sent.
 - Removing a message deletes its database row. Attachment cleanup is attempted afterward; if Storage cleanup fails, the orphaned private object remains inaccessible to non-members and the error is shown.
 
 ## 7. Message notifications and Web Push
@@ -161,7 +170,7 @@ Each browser session must be signed into a different user. If email confirmation
 - Avatars are stored under `<auth-user-uuid>/<random-filename>` in the `avatars` bucket. RLS policies enforce ownership by the first folder segment for upload, replacement, and deletion. The prior avatar is deleted only after the profile row has been updated. If the database update fails, the new upload is cleaned up and the old profile stays in place; cleanup failures are reported.
 - Existing `avatar_url` values that point to this project's `avatars` bucket are recognized and refreshed as signed URLs when needed, including expired signed links. If signing fails, the app shows the default avatar rather than repeatedly requesting a broken public URL, and **Edit profile** lets you replace or remove the saved photo. If the referenced object no longer exists, re-upload the photo.
 - `profile_avatars.sql` creates a public `avatars` bucket when one does not exist. Public bucket images can be fetched by anyone who has their URL; do not put private information in avatars. If an `avatars` bucket already exists, its public/private visibility is preserved. The profile discovery migration permits authenticated users to read avatar objects so private-bucket signed URLs work for directory profiles; uploads and deletes remain owner-only.
-- The migrations restrict profile updates to editable columns and keep the existing profile RLS check that users can update only their own row. Apply `schema.sql`, `profile_avatars.sql`, `profile_discovery.sql`, `messaging_media.sql`, then `notifications.sql` for a new project; for an existing installation, apply the migrations not already run, in that order. If the older attachment policies are already installed, run `storage_policy_scope_fix.sql` before `profile_discovery.sql`.
+- The migrations restrict profile updates to editable columns and keep the existing profile RLS check that users can update only their own row. Apply `schema.sql`, `profile_avatars.sql`, `profile_discovery.sql`, `messaging_media.sql`, `notifications.sql`, then `group_chat_management.sql` for a new project; for an existing installation, apply the migrations not already run, in that order. If the older attachment policies are already installed, run `storage_policy_scope_fix.sql` before `profile_discovery.sql`.
 
 ### Profile acceptance checklist
 
@@ -179,10 +188,10 @@ Each browser session must be signed into a different user. If email confirmation
 - Conversation creation is handled by a database function that includes the caller and validates member IDs.
 - The app uses only a browser-safe public Supabase key. Never use the service-role key client-side.
 - The email lookup RPC remains for creating conversations from an explicitly entered email. The directory uses separate RPCs that do not return email addresses; add abuse controls or rate limits before exposing a large public service.
-- Closed-app push is not active until VAPID secrets, the Edge Function, and database webhook have all been configured and deployed. Web Push is best-effort and subject to browser/OS delivery behavior. End-to-end encryption, group member management, message search, and explicit delivered-status indicators are not implemented.
+- Closed-app push is not active until VAPID secrets, the Edge Function, and database webhook have all been configured and deployed. Web Push is best-effort and subject to browser/OS delivery behavior. End-to-end encryption, group member removal, message search, and explicit delivered-status indicators are not implemented.
 - Typing state is sent via Realtime Broadcast and is ephemeral; it is not persisted.
 - Apply Supabase Auth rate limits, configure email templates/redirects, and review RLS policies before deploying to real users.
-- Group members can read all messages in their group. There is no UI to add/remove members after creation.
+- Group members can read all messages in their group. Any current member can add their direct-chat contacts; only the group creator can delete the group or edit its details.
 - Supabase Realtime Postgres Changes are subject to RLS and project limits.
 
 ## Suggested next steps

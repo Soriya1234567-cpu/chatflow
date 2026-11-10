@@ -8,7 +8,7 @@
   <title>ChatFlow — Real-time chat</title>
   <link rel="icon" href="./assets/icons/icon.svg" type="image/svg+xml">
   <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./css/style.css?v=17">
+  <link rel="stylesheet" href="./css/style.css?v=20">
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
@@ -21,6 +21,10 @@
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 16v-4M12 8h.01"/></symbol>
   <symbol id="i-send" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
   <symbol id="i-media" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9" r="1.5"/><path d="m5 18 5-5 3 3"/><path d="m14 11 5 3.5-5 3.5z"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m7 4 13 8-13 8Z"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
   <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></symbol>
@@ -99,12 +103,16 @@
       <div id="typing-indicator" class="typing-indicator hidden" aria-live="polite"></div>
       <form id="message-form" class="composer hidden">
         <div id="attachment-preview" class="attachment-preview hidden"></div>
+        <div id="recording-status" class="recording-status hidden" role="status"></div>
         <div class="composer-bar">
           <input id="attachment-input" type="file" class="hidden" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm">
           <button id="attach-file" class="composer-icon" type="button" title="Attach a photo or video" aria-label="Attach a photo or video"><svg class="ico" aria-hidden="true"><use href="#i-media"/></svg></button>
           <textarea id="message-input" rows="1" maxlength="4000" placeholder="Write a message…" aria-label="Write a message"></textarea>
           <div class="composer-actions">
             <button id="cancel-upload" class="cancel-upload hidden" type="button">Cancel</button>
+            <button id="cancel-recording" class="composer-icon danger hidden" type="button" title="Discard recording" aria-label="Discard recording"><svg class="ico" aria-hidden="true"><use href="#i-trash"/></svg></button>
+            <button id="pause-recording" class="composer-icon pause-toggle hidden" type="button" title="Pause recording" aria-label="Pause recording"><svg class="ico i-pause" aria-hidden="true"><use href="#i-pause"/></svg><svg class="ico i-play" aria-hidden="true"><use href="#i-play"/></svg></button>
+            <button id="record-audio" class="composer-icon record-toggle" type="button" title="Record voice message" aria-label="Record voice message"><svg class="ico i-mic" aria-hidden="true"><use href="#i-mic"/></svg><svg class="ico i-stop" aria-hidden="true"><use href="#i-stop"/></svg></button>
             <button class="send-button" type="submit" aria-label="Send message" title="Send message"><svg class="ico i-send" aria-hidden="true"><use href="#i-send"/></svg><span class="spinner" aria-hidden="true"></span></button>
           </div>
         </div>
@@ -226,10 +234,14 @@
       <label class="field">Conversation name <span class="optional">(group only)</span>
         <input id="group-name" maxlength="80" placeholder="e.g. Project Team">
       </label>
-      <label class="field">Add people <span class="muted small-text">(email addresses, comma-separated)</span>
-        <input id="member-emails" type="text" required placeholder="alex@example.com, sam@example.com">
+      <label id="group-contact-search-field" class="field hidden">Choose people from your contacts
+        <input id="group-contact-search" type="search" autocomplete="off" placeholder="Search your direct chats">
       </label>
-      <p class="hint">People must have registered with ChatFlow before you can add them.</p>
+      <div id="group-contact-picker" class="group-contact-picker hidden"></div>
+      <label class="field">Add by email <span class="optional">(optional for groups, comma-separated)</span>
+        <input id="member-emails" type="text" placeholder="alex@example.com, sam@example.com">
+      </label>
+      <p class="hint">Choose existing contacts above, or add registered ChatFlow email addresses.</p>
       <p id="new-chat-message" class="notice" role="status"></p>
       <div class="modal-actions"><button class="button subtle" type="button" data-close-dialog>Cancel</button><button id="create-conversation" class="button primary" type="submit">Create conversation</button></div>
     </form>
@@ -240,6 +252,34 @@
       <div class="modal-header"><div><p class="eyebrow">DETAILS</p><h2>Conversation info</h2></div><button class="icon-button" value="cancel" aria-label="Close">×</button></div>
       <h3 id="info-title">Conversation</h3>
       <p id="info-description" class="muted"></p>
+      <section id="group-add-people" class="group-add-people hidden" aria-label="Add contacts to group">
+        <h3>Add people</h3>
+        <label class="field">Choose from your direct-chat contacts
+          <input id="group-add-contact-search" type="search" autocomplete="off" placeholder="Search contacts">
+        </label>
+        <div id="group-add-contact-picker" class="group-contact-picker"></div>
+        <p id="group-add-message" class="notice" role="status" aria-live="polite"></p>
+        <div class="modal-actions"><button id="add-group-contacts" class="button primary" type="button">Add selected people</button></div>
+      </section>
+      <section id="group-management" class="group-management hidden" aria-label="Edit group details">
+        <label class="field">Group name
+          <input id="group-edit-name" type="text" maxlength="80">
+        </label>
+        <div class="group-photo-editor">
+          <div id="group-avatar-preview" class="avatar group-avatar-preview">G</div>
+          <input id="group-avatar-input" type="file" accept="image/jpeg,image/png,image/webp" class="hidden">
+          <div>
+            <button id="group-avatar-choose" class="button subtle" type="button">Change group photo</button>
+            <button id="group-avatar-remove" class="button subtle danger" type="button">Remove photo</button>
+          </div>
+        </div>
+        <p id="group-edit-message" class="notice" role="status" aria-live="polite"></p>
+        <div class="modal-actions"><button id="save-group-details" class="button primary" type="button">Save group details</button></div>
+        <div class="group-delete-action">
+          <p>Deleting a group permanently removes its messages and membership for everyone. Uploaded media may remain in private storage but will no longer be accessible.</p>
+          <button id="delete-group" class="button danger" type="button">Delete group</button>
+        </div>
+      </section>
       <div id="info-members" class="member-list"></div>
       <div class="modal-actions"><button class="button subtle" value="cancel">Close</button></div>
     </form>
@@ -247,6 +287,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./js/config.js"></script>
-  <script src="./js/app.js?v=17"></script>
+  <script src="./js/app.js?v=20"></script>
 </body>
 </html>

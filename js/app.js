@@ -12,10 +12,15 @@
     messages: [], subscriptions: [], isRegister: false, deferredInstall: null,
     typingTimeout: null, typingChannel: null, toastTimeout: null,
     hasOlderMessages: false, loadingOlderMessages: false, reactions: [], readReceipts: [],
-    selectedAttachment: null, attachmentPreviewUrl: null, sendingMessage: false, activeUpload: null,
+    selectedAttachment: null, attachmentPreviewUrl: null, recorder: null,
+    recordingStream: null, recordingChunks: [], recordingStartedAt: 0,
+    recordingTimer: null, recordingPausedAt: 0, recordingPausedDuration: 0,
+    cancelRecording: false, requestingMicrophone: false, sendingMessage: false, activeUpload: null,
     readObserver: null, pendingReadMessageIds: new Set(), directorySearchTimer: null,
     directoryRequestId: 0, directorySuggestionRequestId: 0, directoryProfiles: new Map(),
     profileRequestId: 0, viewedProfileId: null, contactingProfileIds: new Set(), unreadCounts: new Map(),
+    groupAvatarDraft: { file: null, previewUrl: null, remove: false }, savingGroupDetails: false,
+    addingGroupMembers: false, deletingGroup: false,
     notificationWelcomeUsers: new Set(),
     notificationPreferences: { desktop_enabled: false, push_enabled: false, sound_enabled: true, previews_enabled: true },
     seenIncomingMessageIds: new Set(), notificationToasts: new Map(),
@@ -28,6 +33,7 @@
   const PROFILE_LOAD_TIMEOUT_MS = 15000;
   const ATTACHMENT_BUCKET = "chat-attachments";
   const PROFILE_BUCKET = "avatars";
+  const GROUP_AVATAR_BUCKET = "group-avatars";
   const REACTION_EMOJIS = ["👍", "❤️", "😂", "🎉"];
 
   const escapeText = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({
@@ -93,6 +99,20 @@
     element.classList.toggle("avatar-photo", !!safeUrl);
   }
   const ico = (name, cls = "ico") => `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+  function setRecordState(on) {
+    const button = $("record-audio");
+    const label = on ? "Stop recording" : "Record voice message";
+    button.classList.toggle("recording", on);
+    button.title = label;
+    button.setAttribute("aria-label", label);
+  }
+  function setPauseState(paused) {
+    const button = $("pause-recording");
+    const label = paused ? "Resume recording" : "Pause recording";
+    button.classList.toggle("paused", paused);
+    button.title = label;
+    button.setAttribute("aria-label", label);
+  }
   function setSendState(label, percent) {
     const form = $("message-form"), b = form.querySelector('[type="submit"]'), text = label || "Send message";
     b.classList.toggle("busy", !!label); b.title = text; b.setAttribute("aria-label", text);
@@ -558,6 +578,7 @@
     if (state.typingChannel) state.supabase.removeChannel(state.typingChannel);
     clearTimeout(state.avatarRefreshTimer);
     state.avatarRefreshTimer = null;
+    finishVoiceRecording(true);
     if (state.readObserver) state.readObserver.disconnect();
     clearSelectedAttachment();
     state.notificationToasts.forEach(item => clearTimeout(item.timeout));
@@ -584,7 +605,7 @@
       return;
     }
     const { data: conversations, error: convError } = await state.supabase.from("conversations")
-      .select("id, type, name, created_at, created_by").in("id", ids).order("created_at", { ascending: false });
+      .select("id, type, name, group_avatar_path, created_at, created_by").in("id", ids).order("created_at", { ascending: false });
     if (convError) throw convError;
     const { data: allMembers, error: memberError } = await state.supabase.from("conversation_members")
       .select("conversation_id, user_id, role").in("conversation_id", ids);
@@ -598,14 +619,21 @@
       if (result.error) throw result.error;
       profiles = await Promise.all((result.data || []).map(resolveProfileAvatar));
     }
-    state.conversations = (conversations || []).map(c => {
+    state.conversations = await Promise.all((conversations || []).map(async c => {
       const members = (allMembers || []).filter(m => m.conversation_id === c.id).map(m => ({
         ...m, profile: profiles.find(p => p.id === m.user_id) || { display_name: "Unknown user", email: "" }
       }));
       const other = members.find(m => m.user_id !== state.user.id);
       const displayName = c.type === "group" ? c.name : (other?.profile.display_name || "Private chat");
-      return { ...c, members, displayName, memberCount: members.length };
-    });
+      let groupAvatarUrl = "";
+      if (c.type === "group" && c.group_avatar_path) {
+        const { data, error: avatarError } = await state.supabase.storage.from(GROUP_AVATAR_BUCKET)
+          .createSignedUrl(c.group_avatar_path, 3600);
+        if (avatarError) console.warn(`Could not sign group photo for conversation ${c.id}`, avatarError);
+        else groupAvatarUrl = data.signedUrl;
+      }
+      return { ...c, groupAvatarUrl, members, displayName, memberCount: members.length };
+    }));
     renderConversations();
     await refreshUnreadCounts();
     updateServiceWorkerConversationState();
@@ -658,7 +686,8 @@
       const member = conversation?.type === "direct"
         ? conversation.members.find(item => item.user_id !== state.user.id)
         : null;
-      applyAvatarStyles(element, member?.profile || null, initials(conversation?.displayName));
+      const avatarProfile = member?.profile || (conversation?.groupAvatarUrl ? { avatar_url: conversation.groupAvatarUrl } : null);
+      applyAvatarStyles(element, avatarProfile, initials(conversation?.displayName));
     });
     list.querySelectorAll("[data-id]").forEach(btn => btn.addEventListener("click", () => openConversation(btn.dataset.id)));
   }
@@ -702,7 +731,8 @@
     $("active-subtitle").textContent = c.type === "group"
       ? `${c.memberCount} members · Group chat`
       : (otherMember?.profile.status_message || "Private conversation");
-    applyAvatarStyles($("active-avatar"), otherMember?.profile || null, initials(c.displayName));
+    const avatarProfile = otherMember?.profile || (c.groupAvatarUrl ? { avatar_url: c.groupAvatarUrl } : null);
+    applyAvatarStyles($("active-avatar"), avatarProfile, initials(c.displayName));
     $("chat-info").disabled = false;
     updateServiceWorkerConversationState();
   }
@@ -1006,14 +1036,33 @@
     state.subscriptions.push(readChannel);
   }
   function subscribeToConversationChanges() {
-    state.subscriptions.filter(s => ["memberships", "profiles", "incoming-messages", "incoming-reads"].includes(s.__kind)).forEach(s => state.supabase.removeChannel(s));
-    state.subscriptions = state.subscriptions.filter(s => !["memberships", "profiles", "incoming-messages", "incoming-reads"].includes(s.__kind));
+    state.subscriptions.filter(s => ["memberships", "profiles", "conversations", "incoming-messages", "incoming-reads"].includes(s.__kind)).forEach(s => state.supabase.removeChannel(s));
+    state.subscriptions = state.subscriptions.filter(s => !["memberships", "profiles", "conversations", "incoming-messages", "incoming-reads"].includes(s.__kind));
     const channel = state.supabase.channel(`memberships:${state.user.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "conversation_members", filter: `user_id=eq.${state.user.id}` }, () => {
-        loadConversations().catch(e => toast(friendlyError(e)));
+        loadConversations().then(() => {
+          if ($("info-dialog").open) {
+            if (state.activeId && state.conversations.some(conversation => conversation.id === state.activeId)) showConversationInfo();
+            else $("info-dialog").close();
+          }
+        }).catch(e => toast(friendlyError(e)));
       }).subscribe();
     channel.__kind = "memberships";
     state.subscriptions.push(channel);
+    const conversationChannel = state.supabase.channel(`conversations:${state.user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, payload => {
+        const conversationId = payload.new?.id || payload.old?.id;
+        if (state.conversations.some(conversation => conversation.id === conversationId)) {
+          loadConversations().then(() => {
+            if ($("info-dialog").open) {
+              if (state.activeId && state.conversations.some(conversation => conversation.id === state.activeId)) showConversationInfo();
+              else $("info-dialog").close();
+            }
+          }).catch(error => toast(friendlyError(error)));
+        }
+      }).subscribe();
+    conversationChannel.__kind = "conversations";
+    state.subscriptions.push(conversationChannel);
     subscribeToIncomingMessages();
     const profileChannel = state.supabase.channel(`profiles:${state.user.id}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, payload => {
@@ -1051,22 +1100,29 @@
   }
   const MIME_BY_EXTENSION = {
     jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp",
-    mp4: "video/mp4", webm: "video/webm"
+    mp4: "video/mp4", webm: "video/webm", ogg: "audio/ogg"
   };
-  const ALLOWED_MIMES = new Set(Object.values(MIME_BY_EXTENSION));
+  const PHOTO_VIDEO_MIMES = new Set(["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"]);
+  const VOICE_MIMES = new Set(["audio/webm", "audio/ogg", "audio/mp4"]);
   function attachmentKind(mime) {
     if (mime.startsWith("image/")) return "image";
-    return "video";
+    if (mime.startsWith("video/")) return "video";
+    return "audio";
   }
-  async function validateAttachment(file) {
+  async function validateAttachment(file, isVoiceMessage = false) {
     if (!file || file.size < 1 || file.size > MAX_ATTACHMENT_SIZE) {
       throw new Error("Attachments must be between 1 byte and 25 MB.");
     }
     const extension = file.name.split(".").pop().toLowerCase();
-    const extensionMime = MIME_BY_EXTENSION[extension];
+    const extensionMime = isVoiceMessage
+      ? ({ webm: "audio/webm", ogg: "audio/ogg", mp4: "audio/mp4" })[extension]
+      : MIME_BY_EXTENSION[extension];
     const mime = file.type && file.type !== "application/octet-stream" ? file.type : extensionMime;
-    if (!extensionMime || !ALLOWED_MIMES.has(mime)) {
-      throw new Error("Only JPEG, PNG, or WebP photos and MP4 or WebM videos are supported.");
+    const allowed = isVoiceMessage ? VOICE_MIMES.has(mime) : PHOTO_VIDEO_MIMES.has(mime);
+    if (!extensionMime || !allowed) {
+      throw new Error(isVoiceMessage
+        ? "This voice recording format is not supported."
+        : "Only JPEG, PNG, or WebP photos and MP4 or WebM videos are supported.");
     }
     if (extensionMime !== mime) {
       throw new Error("The file extension and file type do not match.");
@@ -1079,6 +1135,9 @@
     else if (mime === "image/webp") valid = begins(0x52, 0x49, 0x46, 0x46) && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP";
     else if (mime === "video/mp4") valid = String.fromCharCode(...bytes.slice(4, 8)) === "ftyp";
     else if (mime === "video/webm") valid = begins(0x1a, 0x45, 0xdf, 0xa3);
+    else if (mime === "audio/mp4") valid = String.fromCharCode(...bytes.slice(4, 8)) === "ftyp";
+    else if (mime === "audio/webm") valid = begins(0x1a, 0x45, 0xdf, 0xa3);
+    else if (mime === "audio/ogg") valid = String.fromCharCode(...bytes.slice(0, 4)) === "OggS";
     if (!valid) throw new Error("The selected file contents do not match its supported file type.");
     return {
       file,
@@ -1095,21 +1154,110 @@
     $("attachment-preview").replaceChildren();
     $("attachment-preview").classList.add("hidden");
   }
-  async function chooseAttachment(file) {
+  async function chooseAttachment(file, isVoiceMessage = false) {
     try {
-      const attachment = await validateAttachment(file);
+      const attachment = await validateAttachment(file, isVoiceMessage);
       clearSelectedAttachment();
       state.selectedAttachment = attachment;
       state.attachmentPreviewUrl = URL.createObjectURL(file);
       const preview = $("attachment-preview");
       const mediaPreview = attachment.kind === "image"
         ? `<img src="${escapeText(state.attachmentPreviewUrl)}" alt="Selected image preview">`
-        : `<video src="${escapeText(state.attachmentPreviewUrl)}" controls preload="metadata"></video>`;
+        : attachment.kind === "video"
+          ? `<video src="${escapeText(state.attachmentPreviewUrl)}" controls preload="metadata"></video>`
+          : `<audio src="${escapeText(state.attachmentPreviewUrl)}" controls></audio>`;
       preview.innerHTML = `${mediaPreview}<span>${escapeText(attachment.name)} · ${(file.size / 1024).toFixed(0)} KB</span><button type="button" class="icon-button small" data-clear-attachment aria-label="Remove attachment">×</button>`;
       preview.classList.remove("hidden");
     } catch (error) {
       toast(friendlyError(error));
     }
+  }
+  async function startVoiceRecording() {
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      toast("Voice recording is not supported in this browser.");
+      return;
+    }
+    if (state.requestingMicrophone) return;
+    state.requestingMicrophone = true;
+    $("record-audio").disabled = true;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"]
+        .find(type => MediaRecorder.isTypeSupported(type));
+      state.recordingStream = stream;
+      state.recordingChunks = [];
+      state.cancelRecording = false;
+      state.recordingPausedAt = 0;
+      state.recordingPausedDuration = 0;
+      state.recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      state.recorder.addEventListener("dataavailable", event => {
+        if (event.data.size) state.recordingChunks.push(event.data);
+      });
+      state.recorder.addEventListener("stop", async () => {
+        const recordedMimeType = state.recorder.mimeType || mimeType;
+        clearInterval(state.recordingTimer);
+        state.recordingTimer = null;
+        stream.getTracks().forEach(track => track.stop());
+        state.recordingStream = null;
+        state.recorder = null;
+        $("recording-status").classList.add("hidden");
+        $("cancel-recording").classList.add("hidden");
+        $("pause-recording").classList.add("hidden");
+        setRecordState(false);
+        $("record-audio").disabled = false;
+        if (state.cancelRecording) return;
+        const type = recordedMimeType?.split(";")[0] || "audio/webm";
+        const extension = type === "audio/ogg" ? "ogg" : type === "audio/mp4" ? "mp4" : "webm";
+        await chooseAttachment(new File(state.recordingChunks, `voice-message.${extension}`, { type }), true);
+      });
+      state.recordingStartedAt = Date.now();
+      state.recorder.start(250);
+      setRecordState(true);
+      setPauseState(false);
+      $("pause-recording").classList.remove("hidden");
+      $("cancel-recording").classList.remove("hidden");
+      $("recording-status").classList.remove("hidden");
+      const updateDuration = () => {
+        const elapsed = (state.recordingPausedAt || Date.now()) - state.recordingStartedAt - state.recordingPausedDuration;
+        const seconds = Math.floor(elapsed / 1000);
+        const prefix = state.recordingPausedAt ? "Recording paused" : "Recording voice message";
+        $("recording-status").textContent = `${prefix} · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+      };
+      updateDuration();
+      state.recordingTimer = setInterval(updateDuration, 500);
+    } catch (error) {
+      state.recordingStream?.getTracks().forEach(track => track.stop());
+      state.recordingStream = null;
+      state.recorder = null;
+      $("record-audio").disabled = false;
+      setRecordState(false);
+      $("recording-status").classList.add("hidden");
+      $("pause-recording").classList.add("hidden");
+      $("cancel-recording").classList.add("hidden");
+      toast(error.name === "NotAllowedError" ? "Microphone permission was denied." : friendlyError(error));
+    } finally {
+      state.requestingMicrophone = false;
+      $("record-audio").disabled = false;
+    }
+  }
+  function toggleVoiceRecordingPause() {
+    if (!state.recorder) return;
+    if (state.recorder.state === "recording") {
+      state.recorder.pause();
+      state.recordingPausedAt = Date.now();
+      setPauseState(true);
+    } else if (state.recorder.state === "paused") {
+      state.recordingPausedDuration += Date.now() - state.recordingPausedAt;
+      state.recordingPausedAt = 0;
+      state.recorder.resume();
+      setPauseState(false);
+    }
+  }
+  function finishVoiceRecording(cancelled) {
+    if (!state.recorder || state.recorder.state === "inactive") return;
+    state.cancelRecording = cancelled;
+    $("record-audio").disabled = true;
+    state.recorder.stop();
   }
   async function uploadAttachment(path, attachment) {
     const { data, error } = await state.supabase.auth.getSession();
@@ -1263,27 +1411,82 @@
       toast(friendlyError(error));
     }
   }
+  function getExistingDirectContacts() {
+    const contacts = new Map();
+    state.conversations.filter(conversation => conversation.type === "direct").forEach(conversation => {
+      const member = conversation.members.find(item => item.user_id !== state.user.id);
+      if (member && !contacts.has(member.user_id)) contacts.set(member.user_id, member.profile);
+    });
+    return [...contacts.entries()].map(([id, profile]) => ({ id, profile }))
+      .sort((a, b) => (a.profile.display_name || "").localeCompare(b.profile.display_name || ""));
+  }
+  function renderGroupContactPicker() {
+    const query = $("group-contact-search").value.trim().toLowerCase();
+    const selectedIds = new Set([...$("group-contact-picker").querySelectorAll('input[name="group-contact"]:checked')].map(input => input.value));
+    const contacts = getExistingDirectContacts().filter(({ profile }) => {
+      const name = profile.display_name || "";
+      const username = profile.username || "";
+      return !query || name.toLowerCase().includes(query) || username.toLowerCase().includes(query);
+    });
+    const picker = $("group-contact-picker");
+    picker.innerHTML = contacts.length ? contacts.map(({ id, profile }) => `
+      <label class="group-contact-option">
+        <input type="checkbox" name="group-contact" value="${escapeText(id)}" ${selectedIds.has(id) ? "checked" : ""}>
+        <span class="avatar" data-contact-avatar="${escapeText(id)}">${escapeText(initials(profile.display_name || "ChatFlow user"))}</span>
+        <span class="group-contact-copy"><strong>${escapeText(profile.display_name || "ChatFlow user")}</strong>
+          <small>${profile.username ? `@${escapeText(profile.username)}` : "Existing contact"}</small></span>
+      </label>`).join("") : `<p class="muted small-text">${query ? "No contacts match your search." : "No existing direct-chat contacts yet. Add people by email instead."}</p>`;
+    picker.querySelectorAll("[data-contact-avatar]").forEach(element => {
+      const contact = contacts.find(item => item.id === element.dataset.contactAvatar);
+      applyAvatarStyles(element, contact?.profile || null, initials(contact?.profile.display_name || "ChatFlow user"));
+    });
+  }
+  function updateNewChatType() {
+    const isGroup = $("conversation-type").value === "group";
+    $("group-name").disabled = !isGroup;
+    $("group-name").required = isGroup;
+    $("member-emails").required = !isGroup;
+    $("member-emails").placeholder = isGroup ? "alex@example.com, sam@example.com" : "alex@example.com";
+    $("group-contact-search-field").classList.toggle("hidden", !isGroup);
+    $("group-contact-picker").classList.toggle("hidden", !isGroup);
+    if (isGroup) renderGroupContactPicker();
+  }
+  function openNewChat() {
+    $("new-chat-form").reset();
+    $("group-contact-picker").querySelectorAll('input[name="group-contact"]').forEach(input => { input.checked = false; });
+    notice("new-chat-message", "");
+    updateNewChatType();
+    $("new-chat-dialog").showModal();
+  }
   async function createConversation(event) {
     event.preventDefault();
     notice("new-chat-message", "");
     const type = $("conversation-type").value;
     const emails = [...new Set($("member-emails").value.split(",").map(x => x.trim().toLowerCase()).filter(Boolean))];
     const groupName = $("group-name").value.trim();
-    if (!emails.length) return notice("new-chat-message", "Enter at least one registered email address.");
+    const selectedContactIds = type === "group"
+      ? [...$("group-contact-picker").querySelectorAll('input[name="group-contact"]:checked')].map(input => input.value)
+      : [];
+    if (type === "direct" && !emails.length) return notice("new-chat-message", "Enter one registered email address.");
+    if (type === "group" && !emails.length && !selectedContactIds.length) return notice("new-chat-message", "Choose at least one contact or enter a registered email.");
     if (emails.includes(state.user.email.toLowerCase())) return notice("new-chat-message", "You are already added automatically. Enter other people only.");
     if (type === "direct" && emails.length !== 1) return notice("new-chat-message", "Private chats require exactly one other person.");
     if (type === "group" && !groupName) return notice("new-chat-message", "Please name your group.");
     const button = $("create-conversation");
     button.disabled = true; button.textContent = "Creating…";
     try {
-      // Resolve users via a narrowly scoped RPC. It returns only exact email matches.
-      const { data: found, error: lookupError } = await state.supabase.rpc("lookup_profiles_by_email", { lookup_emails: emails });
-      if (lookupError) throw lookupError;
-      const matched = found || [];
-      const missing = emails.filter(email => !matched.some(p => p.email?.toLowerCase() === email));
-      if (missing.length) throw new Error(`No registered profile found for: ${missing.join(", ")}`);
-      const memberIds = [...new Set([state.user.id, ...matched.map(p => p.id)])];
+      let matched = [];
+      if (emails.length) {
+        // Resolve email additions via the exact-match RPC; selected contacts need no lookup.
+        const { data: found, error: lookupError } = await state.supabase.rpc("lookup_profiles_by_email", { lookup_emails: emails });
+        if (lookupError) throw lookupError;
+        matched = found || [];
+        const missing = emails.filter(email => !matched.some(p => p.email?.toLowerCase() === email));
+        if (missing.length) throw new Error(`No registered profile found for: ${missing.join(", ")}`);
+      }
+      const memberIds = [...new Set([state.user.id, ...selectedContactIds, ...matched.map(p => p.id)])];
       if (type === "direct" && memberIds.length !== 2) throw new Error("A private conversation needs one other user.");
+      if (type === "group" && memberIds.length < 2) throw new Error("A group needs at least one other person.");
       // RPC performs creation atomically and only after validating the caller.
       const { data: conversationId, error } = await state.supabase.rpc("create_conversation", {
         conversation_type: type, conversation_name: type === "group" ? groupName : null, member_ids: memberIds
@@ -1291,6 +1494,8 @@
       if (error) throw error;
       $("new-chat-dialog").close();
       $("new-chat-form").reset();
+      $("group-contact-picker").querySelectorAll('input[name="group-contact"]').forEach(input => { input.checked = false; });
+      updateNewChatType();
       await loadConversations();
       if (conversationId) await openConversation(conversationId);
       toast("Conversation created.");
@@ -1513,12 +1718,223 @@
     if (!c) return;
     $("info-title").textContent = c.displayName;
     $("info-description").textContent = c.type === "group" ? `Group chat · ${c.memberCount} members` : "Private conversation";
-    $("info-members").innerHTML = c.members.map(m => `<div class="member-row"><button class="avatar profile-trigger" data-profile-id="${escapeText(m.user_id)}" type="button" aria-label="View ${escapeText(m.profile.display_name)}'s profile" data-info-avatar="${escapeText(m.user_id)}">${escapeText(initials(m.profile.display_name))}</button><button class="profile-trigger" data-profile-id="${escapeText(m.user_id)}" type="button">${escapeText(m.profile.display_name)}${m.user_id === state.user.id ? " (you)" : ""}</button></div>`).join("");
+    const canManageGroup = c.type === "group" && c.created_by === state.user.id;
+    $("group-add-people").classList.toggle("hidden", c.type !== "group");
+    $("group-management").classList.toggle("hidden", !canManageGroup);
+    if (c.type === "group") renderGroupAddContactPicker(c);
+    if (canManageGroup) {
+      resetGroupAvatarDraft();
+      $("group-edit-name").value = c.name || "";
+      $("group-avatar-remove").disabled = !c.group_avatar_path;
+      $("group-edit-message").textContent = "";
+      renderGroupAvatarPreview(c.groupAvatarUrl);
+    }
+    renderConversationInfoMembers(c);
+    if (!$("info-dialog").open) $("info-dialog").showModal();
+  }
+  function renderConversationInfoMembers(conversation) {
+    $("info-members").innerHTML = conversation.members.map(member => `<div class="member-row"><button class="avatar profile-trigger" data-profile-id="${escapeText(member.user_id)}" type="button" aria-label="View ${escapeText(member.profile.display_name)}'s profile" data-info-avatar="${escapeText(member.user_id)}">${escapeText(initials(member.profile.display_name))}</button><button class="profile-trigger" data-profile-id="${escapeText(member.user_id)}" type="button">${escapeText(member.profile.display_name)}${member.user_id === state.user.id ? " (you)" : ""}</button></div>`).join("");
     $("info-members").querySelectorAll("[data-info-avatar]").forEach(element => {
-      const member = c.members.find(item => item.user_id === element.dataset.infoAvatar);
+      const member = conversation.members.find(item => item.user_id === element.dataset.infoAvatar);
       applyAvatarStyles(element, member?.profile || null, initials(member?.profile.display_name));
     });
-    if (!$("info-dialog").open) $("info-dialog").showModal();
+  }
+  function renderGroupAddContactPicker(conversation) {
+    const query = $("group-add-contact-search").value.trim().toLowerCase();
+    const selectedIds = new Set([...$("group-add-contact-picker").querySelectorAll('input[name="group-add-contact"]:checked')].map(input => input.value));
+    const members = new Set(conversation.members.map(member => member.user_id));
+    const contacts = getExistingDirectContacts().filter(({ id, profile }) => {
+      if (members.has(id)) return false;
+      const name = profile.display_name || "";
+      const username = profile.username || "";
+      return !query || name.toLowerCase().includes(query) || username.toLowerCase().includes(query);
+    });
+    const picker = $("group-add-contact-picker");
+    picker.innerHTML = contacts.length ? contacts.map(({ id, profile }) => `
+      <label class="group-contact-option">
+        <input type="checkbox" name="group-add-contact" value="${escapeText(id)}" ${selectedIds.has(id) ? "checked" : ""}>
+        <span class="avatar" data-group-contact-avatar="${escapeText(id)}">${escapeText(initials(profile.display_name || "ChatFlow user"))}</span>
+        <span class="group-contact-copy"><strong>${escapeText(profile.display_name || "ChatFlow user")}</strong>
+          <small>${profile.username ? `@${escapeText(profile.username)}` : "Direct-chat contact"}</small></span>
+      </label>`).join("") : `<p class="muted small-text">${query ? "No contacts match your search." : "All your direct-chat contacts are already in this group, or you have no contacts to add."}</p>`;
+    picker.querySelectorAll("[data-group-contact-avatar]").forEach(element => {
+      const contact = contacts.find(item => item.id === element.dataset.groupContactAvatar);
+      applyAvatarStyles(element, contact?.profile || null, initials(contact?.profile.display_name || "ChatFlow user"));
+    });
+    $("add-group-contacts").disabled = state.addingGroupMembers || contacts.length === 0;
+  }
+  async function addSelectedGroupContacts() {
+    if (state.addingGroupMembers) return;
+    const conversation = state.conversations.find(item => item.id === state.activeId);
+    if (!conversation || conversation.type !== "group") return;
+    const memberIds = [...$("group-add-contact-picker").querySelectorAll('input[name="group-add-contact"]:checked')].map(input => input.value);
+    if (!memberIds.length) {
+      notice("group-add-message", "Choose at least one contact to add.");
+      return;
+    }
+    const button = $("add-group-contacts");
+    state.addingGroupMembers = true;
+    button.disabled = true;
+    button.textContent = "Adding people…";
+    $("group-add-contact-search").disabled = true;
+    $("group-add-contact-picker").querySelectorAll("input").forEach(input => { input.disabled = true; });
+    notice("group-add-message", "");
+    try {
+      const { data: addedCount, error } = await state.supabase.rpc("add_group_members", {
+        target_conversation: conversation.id,
+        new_member_ids: memberIds
+      });
+      if (error) throw error;
+      notice("group-add-message", addedCount
+        ? `Added ${addedCount} ${addedCount === 1 ? "person" : "people"} to the group.`
+        : "Those contacts are already in the group.");
+      if (addedCount) toast(`Added ${addedCount} ${addedCount === 1 ? "person" : "people"} to the group.`);
+      try {
+        await loadConversations();
+        const refreshedConversation = state.conversations.find(item => item.id === conversation.id);
+        if (refreshedConversation) {
+          $("info-title").textContent = refreshedConversation.displayName;
+          $("info-description").textContent = `Group chat · ${refreshedConversation.memberCount} members`;
+          renderGroupAddContactPicker(refreshedConversation);
+          renderConversationInfoMembers(refreshedConversation);
+        }
+      } catch (refreshError) {
+        toast(`Contacts were added, but the group view could not be refreshed: ${friendlyError(refreshError)}`);
+      }
+    } catch (error) {
+      notice("group-add-message", friendlyError(error));
+    } finally {
+      state.addingGroupMembers = false;
+      button.textContent = "Add selected people";
+      $("group-add-contact-search").disabled = false;
+      if ($("info-dialog").open) renderGroupAddContactPicker(state.conversations.find(item => item.id === state.activeId) || conversation);
+    }
+  }
+  async function deleteCurrentGroup() {
+    if (state.deletingGroup) return;
+    const conversation = state.conversations.find(item => item.id === state.activeId);
+    if (!conversation || conversation.type !== "group" || conversation.created_by !== state.user.id) return;
+    const confirmed = window.confirm(`Delete "${conversation.displayName}" for everyone? This permanently removes the group and its messages.`);
+    if (!confirmed) return;
+    state.deletingGroup = true;
+    const button = $("delete-group");
+    button.disabled = true;
+    button.textContent = "Deleting group…";
+    try {
+      const { error } = await state.supabase.rpc("delete_group_conversation", {
+        target_conversation: conversation.id
+      });
+      if (error) throw error;
+      $("info-dialog").close();
+      state.conversations = state.conversations.filter(item => item.id !== conversation.id);
+      renderEmptyChat();
+      toast("Group and its messages were deleted.");
+      try {
+        await loadConversations();
+      } catch (refreshError) {
+        toast(`Group was deleted, but the conversation list could not be refreshed: ${friendlyError(refreshError)}`);
+      }
+    } catch (error) {
+      $("group-edit-message").textContent = friendlyError(error);
+      toast(friendlyError(error));
+    } finally {
+      state.deletingGroup = false;
+      button.disabled = false;
+      button.textContent = "Delete group";
+    }
+  }
+  function resetGroupAvatarDraft() {
+    if (state.groupAvatarDraft.previewUrl) URL.revokeObjectURL(state.groupAvatarDraft.previewUrl);
+    state.groupAvatarDraft = { file: null, previewUrl: null, remove: false };
+    $("group-avatar-input").value = "";
+  }
+  function renderGroupAvatarPreview(avatarUrl) {
+    const conversation = state.conversations.find(item => item.id === state.activeId);
+    const name = $("group-edit-name").value.trim() || conversation?.displayName || "Group";
+    applyAvatarStyles($("group-avatar-preview"), avatarUrl ? { avatar_url: avatarUrl } : null, initials(name));
+  }
+  async function saveGroupDetails() {
+    if (state.savingGroupDetails) return;
+    const conversation = state.conversations.find(item => item.id === state.activeId);
+    if (!conversation || conversation.type !== "group" || conversation.created_by !== state.user.id) return;
+    const name = $("group-edit-name").value.trim().replace(/\s+/g, " ");
+    if (!name || name.length > 80) {
+      notice("group-edit-message", "Group name must contain 1 to 80 characters.");
+      return;
+    }
+    const button = $("save-group-details");
+    const inputs = $("group-management").querySelectorAll("input, button");
+    const previousPath = conversation.group_avatar_path || null;
+    let uploadedPath = null;
+    let updateCommitted = false;
+    state.savingGroupDetails = true;
+    inputs.forEach(control => { control.disabled = true; });
+    button.textContent = state.groupAvatarDraft.file ? "Uploading photo…" : "Saving…";
+    notice("group-edit-message", "");
+    try {
+      let nextPath = previousPath;
+      if (state.groupAvatarDraft.file) {
+        const file = state.groupAvatarDraft.file;
+        const mimeType = await validateAvatarFile(file);
+        const extension = mimeType === "image/jpeg" ? "jpg" : mimeType.split("/")[1];
+        const filename = globalThis.crypto?.randomUUID
+          ? `${crypto.randomUUID()}.${extension}`
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
+        uploadedPath = `${conversation.id}/${filename}`;
+        const { error: uploadError } = await state.supabase.storage.from(GROUP_AVATAR_BUCKET).upload(uploadedPath, file, {
+          cacheControl: "3600", upsert: false, contentType: mimeType
+        });
+        if (uploadError) throw uploadError;
+        nextPath = uploadedPath;
+      } else if (state.groupAvatarDraft.remove) {
+        nextPath = null;
+      }
+      const { data: updated, error: updateError } = await state.supabase.from("conversations")
+        .update({ name, group_avatar_path: nextPath })
+        .eq("id", conversation.id).eq("created_by", state.user.id)
+        .select("id, name, group_avatar_path").single();
+      if (updateError) throw updateError;
+      updateCommitted = true;
+      conversation.name = updated.name;
+      conversation.displayName = updated.name;
+      conversation.group_avatar_path = updated.group_avatar_path;
+      conversation.groupAvatarUrl = "";
+      renderConversations();
+      if (state.activeId === conversation.id) updateActiveHeader(conversation);
+      if (previousPath && previousPath !== nextPath) {
+        const { error: removeError } = await state.supabase.storage.from(GROUP_AVATAR_BUCKET).remove([previousPath]);
+        if (removeError) toast(`Group details saved, but old photo cleanup failed: ${friendlyError(removeError)}`);
+      }
+      if (nextPath) {
+        const { data: signed, error: signError } = await state.supabase.storage.from(GROUP_AVATAR_BUCKET).createSignedUrl(nextPath, 3600);
+        if (signError) {
+          console.warn(`Group details saved but photo preview could not be refreshed for ${conversation.id}`, signError);
+          toast("Group details saved, but the photo preview could not be refreshed.");
+        } else {
+          conversation.groupAvatarUrl = signed.signedUrl;
+        }
+      }
+      renderConversations();
+      updateActiveHeader(conversation);
+      $("info-title").textContent = conversation.displayName;
+      $("info-description").textContent = `Group chat · ${conversation.memberCount} members`;
+      $("group-avatar-remove").disabled = !conversation.group_avatar_path;
+      renderGroupAvatarPreview(conversation.groupAvatarUrl);
+      resetGroupAvatarDraft();
+      $("group-edit-message").textContent = "Group details saved.";
+      toast("Group details saved.");
+    } catch (error) {
+      if (uploadedPath && !updateCommitted) {
+        const { error: cleanupError } = await state.supabase.storage.from(GROUP_AVATAR_BUCKET).remove([uploadedPath]);
+        if (cleanupError) toast(`Group update failed and uploaded-photo cleanup failed: ${friendlyError(cleanupError)}`);
+      }
+      notice("group-edit-message", friendlyError(error));
+    } finally {
+      state.savingGroupDetails = false;
+      inputs.forEach(control => { control.disabled = false; });
+      $("group-avatar-remove").disabled = !conversation.group_avatar_path;
+      button.textContent = "Save group details";
+    }
   }
   function resetProfileDraft() {
     if (state.profileDraft.previewUrl) URL.revokeObjectURL(state.profileDraft.previewUrl);
@@ -1866,17 +2282,62 @@
     $("profile-dialog").addEventListener("cancel", event => {
       if (state.savingProfile) event.preventDefault();
     });
-    $("new-chat").addEventListener("click", () => { notice("new-chat-message", ""); $("new-chat-dialog").showModal(); });
-    $("welcome-new-chat").addEventListener("click", () => { notice("new-chat-message", ""); $("new-chat-dialog").showModal(); });
+    $("new-chat").addEventListener("click", openNewChat);
+    $("welcome-new-chat").addEventListener("click", openNewChat);
     $("new-chat-dialog").querySelectorAll("[data-close-dialog]").forEach(button => {
       button.addEventListener("click", () => $("new-chat-dialog").close());
     });
     $("new-chat-form").addEventListener("submit", createConversation);
-    $("conversation-type").addEventListener("change", () => {
-      $("group-name").disabled = $("conversation-type").value !== "group";
-      $("group-name").required = $("conversation-type").value === "group";
-      $("member-emails").placeholder = $("conversation-type").value === "group" ? "alex@example.com, sam@example.com" : "alex@example.com";
+    $("conversation-type").addEventListener("change", updateNewChatType);
+    $("group-contact-search").addEventListener("input", renderGroupContactPicker);
+    $("group-edit-name").addEventListener("input", () => {
+      if (!state.groupAvatarDraft.file && !state.groupAvatarDraft.remove) {
+        const conversation = state.conversations.find(item => item.id === state.activeId);
+        renderGroupAvatarPreview(conversation?.groupAvatarUrl);
+      }
     });
+    $("group-avatar-choose").addEventListener("click", () => $("group-avatar-input").click());
+    $("group-avatar-input").addEventListener("change", async event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        await validateAvatarFile(file);
+        if (state.groupAvatarDraft.previewUrl) URL.revokeObjectURL(state.groupAvatarDraft.previewUrl);
+        state.groupAvatarDraft = { file, previewUrl: URL.createObjectURL(file), remove: false };
+        $("group-avatar-remove").disabled = false;
+        $("group-edit-message").textContent = "Photo preview ready. Save group details to upload.";
+        renderGroupAvatarPreview(state.groupAvatarDraft.previewUrl);
+      } catch (error) {
+        $("group-avatar-input").value = "";
+        notice("group-edit-message", friendlyError(error));
+      }
+    });
+    $("group-avatar-remove").addEventListener("click", () => {
+      const conversation = state.conversations.find(item => item.id === state.activeId);
+      if (state.groupAvatarDraft.previewUrl) URL.revokeObjectURL(state.groupAvatarDraft.previewUrl);
+      state.groupAvatarDraft = { file: null, previewUrl: null, remove: !!conversation?.group_avatar_path };
+      $("group-avatar-input").value = "";
+      $("group-avatar-remove").disabled = !conversation?.group_avatar_path;
+      $("group-edit-message").textContent = conversation?.group_avatar_path
+        ? "Photo will be removed when you save."
+        : "Selected photo cleared.";
+      renderGroupAvatarPreview("");
+    });
+    $("save-group-details").addEventListener("click", saveGroupDetails);
+    $("group-add-contact-search").addEventListener("input", () => {
+      const conversation = state.conversations.find(item => item.id === state.activeId);
+      if (conversation?.type === "group") renderGroupAddContactPicker(conversation);
+    });
+    $("add-group-contacts").addEventListener("click", addSelectedGroupContacts);
+    $("delete-group").addEventListener("click", deleteCurrentGroup);
+    $("info-dialog").addEventListener("submit", event => {
+      event.preventDefault();
+      if (!state.savingGroupDetails && !state.addingGroupMembers && !state.deletingGroup) $("info-dialog").close();
+    });
+    $("info-dialog").addEventListener("cancel", event => {
+      if (state.savingGroupDetails || state.addingGroupMembers || state.deletingGroup) event.preventDefault();
+    });
+    $("info-dialog").addEventListener("close", resetGroupAvatarDraft);
     $("message-form").addEventListener("submit", sendMessage);
     $("load-older").addEventListener("click", loadOlderMessages);
     $("messages").addEventListener("click", handleMessageAction);
@@ -1887,6 +2348,15 @@
     $("attachment-preview").addEventListener("click", event => {
       if (event.target.closest("[data-clear-attachment]")) clearSelectedAttachment();
     });
+    $("record-audio").addEventListener("click", () => {
+      if (state.recorder) {
+        if (state.recorder.state === "recording" || state.recorder.state === "paused") finishVoiceRecording(false);
+        return;
+      }
+      startVoiceRecording();
+    });
+    $("pause-recording").addEventListener("click", toggleVoiceRecordingPause);
+    $("cancel-recording").addEventListener("click", () => finishVoiceRecording(true));
     $("cancel-upload").addEventListener("click", () => state.activeUpload?.abort());
     $("close-image-preview").addEventListener("click", () => {
       $("image-preview-dialog").close();
@@ -1932,7 +2402,7 @@
   }
   async function init() {
     wireEvents();
-    $("group-name").disabled = true;
+    updateNewChatType();
     if (!configured || !window.supabase) {
       showAuth();
       notice("auth-message", "Setup required: add your Supabase project URL and public key in js/config.js, then run the SQL migrations in supabase/.");
