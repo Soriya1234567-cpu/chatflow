@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ChatFlow logo">
+  <defs>
+    <linearGradient id="bg" x1="64" y1="32" x2="440" y2="490" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0c1220"/>
+      <stop offset="1" stop-color="#0a1021"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="105" y1="96" x2="388" y2="410" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9d8cff"/>
+      <stop offset="0.38" stop-color="#7a6ef6"/>
+      <stop offset="1" stop-color="#5a5ae6"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.3" cy="0.2" r="0.8">
+      <stop offset="0" stop-color="#c5b8ff" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#c5b8ff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="18" flood-color="#0b1022" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="138" fill="url(#bg)"/>
+  <circle cx="137" cy="124" r="170" fill="url(#glow)" opacity="0.85"/>
+  <circle cx="392" cy="408" r="140" fill="#4fd0ff" opacity="0.12"/>
+
+  <g filter="url(#shadow)">
+    <rect x="76" y="76" width="360" height="360" rx="110" fill="url(#brand)"/>
+  </g>
+
+  <path d="M333 132c-27-24-61-36-99-36-96 0-174 77-174 173s78 173 174 173c41 0 80-14 112-40l-38-39c-24 19-52 29-84 29-70 0-126-56-126-126s56-126 126-126c31 0 60 10 84 29l38-39Z" fill="#f6f8ff" opacity="0.98"/>
+
+  <path d="M290 168h-61c-72 0-131 59-131 131 0 72 59 131 131 131h108c17 0 31-14 31-31v-27c0-17-14-31-31-31H229c-38 0-69-31-69-69s31-69 69-69h62c10 0 19 9 19 19v28c0 10-9 19-19 19h-28c-19 0-35 16-35 35s16 35 35 35h64l56 52c-12 11-27 17-44 17H229c-65 0-118-53-118-118s53-118 118-118h61c10 0 19 9 19 19v28c0 10-9 19-19 19Z" fill="#ffffff" opacity="0.95"/>
+
+  <circle cx="202" cy="262" r="12" fill="#5e5de8"/>
+  <circle cx="244" cy="262" r="12" fill="#5e5de8"/>
+  <circle cx="286" cy="262" r="12" fill="#5e5de8"/>
+
+  <path d="M362 167c12 0 22 10 22 22v38c0 12-10 22-22 22h-15l-15 18 4-18h-25c-12 0-22-10-22-22v-38c0-12 10-22 22-22h55Z" fill="#fff" opacity="0.95"/>
+</svg>

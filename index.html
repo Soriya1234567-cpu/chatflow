@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a0c11">
+  <meta name="description" content="ChatFlow — simple, real-time conversations.">
+  <title>ChatFlow — Real-time chat</title>
+  <link rel="icon" href="./assets/icons/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="stylesheet" href="./css/style.css?v=16">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a2 2 0 0 0 3.4 0"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7.5"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 16v-4M12 8h.01"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-media" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9" r="1.5"/><path d="m5 18 5-5 3 3"/><path d="m14 11 5 3.5-5 3.5z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></symbol>
+  <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="m15.5 8.5-2 5-5 2 2-5Z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/></symbol>
+</defs></svg>
+  <main id="auth-screen" class="auth-shell">
+    <section class="auth-card">
+      <div class="brand brand-large"><span class="brand-mark">C</span><span>ChatFlow</span></div>
+      <p class="eyebrow">YOUR SPACE TO CONNECT</p>
+      <h1 id="auth-title">Welcome back</h1>
+      <p class="muted" id="auth-subtitle">Sign in to continue your conversations.</p>
+      <form id="auth-form">
+        <label id="name-field" class="field hidden">Display name
+          <input id="display-name" type="text" maxlength="40" autocomplete="nickname" placeholder="Your name">
+        </label>
+        <label class="field">Email
+          <input id="email" type="email" required autocomplete="email" placeholder="you@example.com">
+        </label>
+        <label class="field">Password
+          <input id="password" type="password" required minlength="8" autocomplete="current-password" placeholder="At least 8 characters">
+        </label>
+        <button class="button primary full" id="auth-submit" type="submit">Sign in</button>
+      </form>
+      <p id="auth-message" class="notice" role="status"></p>
+      <p class="auth-switch"><span id="auth-switch-label">New to ChatFlow?</span> <button id="auth-switch" class="link-button" type="button">Create an account</button></p>
+      <p class="fine-print">By continuing, you agree to use ChatFlow respectfully.</p>
+    </section>
+  </main>
+
+  <div id="app-screen" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <div class="brand"><span class="brand-mark">C</span><span>ChatFlow</span></div>
+        <div class="sidebar-actions">
+          <button id="notification-settings" class="icon-button" type="button" title="Notification settings" aria-label="Notification settings"><svg class="ico" aria-hidden="true"><use href="#i-bell"/></svg></button>
+          <button id="new-chat" class="icon-button" type="button" title="Start a conversation" aria-label="Start a conversation"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg></button>
+        </div>
+      </div>
+      <div class="current-user">
+        <div id="my-avatar" class="avatar">?</div>
+        <div class="user-copy"><strong id="my-name">Your profile</strong><span class="online-label"><i></i> Online</span></div>
+        <div class="user-actions">
+          <button id="edit-profile-button" class="icon-button small" type="button" title="Edit profile" aria-label="Edit profile"><svg class="ico" aria-hidden="true"><use href="#i-edit"/></svg></button>
+          <button id="sign-out" class="icon-button small" type="button" title="Sign out" aria-label="Sign out"><svg class="ico" aria-hidden="true"><use href="#i-logout"/></svg></button>
+        </div>
+      </div>
+      <div class="section-heading"><span>MESSAGES</span><span class="message-counts"><span id="chat-count">0</span><span id="total-unread-badge" class="unread-badge hidden" aria-label="Unread messages">0</span></span></div>
+      <label class="search-box"><svg class="ico" aria-hidden="true"><use href="#i-search"/></svg><input id="chat-search" type="search" placeholder="Search conversations" aria-label="Search conversations"></label>
+      <button id="discover-people" class="button subtle discover-button" type="button"><svg class="ico" aria-hidden="true"><use href="#i-compass"/></svg><span>Discover people</span></button>
+      <div id="conversation-list" class="conversation-list">
+        <div class="empty-sidebar">Your conversations will appear here.</div>
+      </div>
+      <div class="sidebar-footer"><span class="status-dot"></span> Connected to ChatFlow</div>
+    </aside>
+
+    <section class="chat-panel">
+      <header class="chat-header">
+        <button id="mobile-back" class="icon-button back-button" type="button" aria-label="Back to conversations"><svg class="ico" aria-hidden="true"><use href="#i-back"/></svg></button>
+        <button id="active-avatar" class="avatar large" type="button" aria-label="View profile">C</button>
+        <div class="chat-heading"><h2><button id="active-title" class="text-profile-trigger" type="button">Welcome to ChatFlow</button></h2><p id="active-subtitle">Choose a conversation to get started</p></div>
+        <div class="header-actions">
+          <button id="install-app" class="button subtle install-button hidden" type="button">Install app</button>
+          <button id="chat-info" class="icon-button" type="button" title="Conversation details" aria-label="Conversation details"><svg class="ico" aria-hidden="true"><use href="#i-info"/></svg></button>
+        </div>
+      </header>
+      <div id="welcome-panel" class="welcome-panel">
+        <div class="welcome-art"><span></span><span></span><span></span><div class="welcome-bubble"><svg class="ico" aria-hidden="true"><use href="#i-spark"/></svg></div></div>
+        <h2>Your conversations, flowing.</h2>
+        <p>Start a private conversation or create a group to bring everyone together.</p>
+        <button id="welcome-new-chat" class="button primary" type="button"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Start a conversation</span></button>
+      </div>
+      <button id="load-older" class="button subtle load-older hidden" type="button">Load earlier messages</button>
+      <div id="messages" class="messages hidden" aria-live="polite" aria-label="Messages"></div>
+      <div id="typing-indicator" class="typing-indicator hidden" aria-live="polite"></div>
+      <form id="message-form" class="composer hidden">
+        <div id="attachment-preview" class="attachment-preview hidden"></div>
+        <div class="composer-bar">
+          <input id="attachment-input" type="file" class="hidden" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm">
+          <button id="attach-file" class="composer-icon" type="button" title="Attach a photo or video" aria-label="Attach a photo or video"><svg class="ico" aria-hidden="true"><use href="#i-media"/></svg></button>
+          <textarea id="message-input" rows="1" maxlength="4000" placeholder="Write a message…" aria-label="Write a message"></textarea>
+          <div class="composer-actions">
+            <button id="cancel-upload" class="cancel-upload hidden" type="button">Cancel</button>
+            <button class="send-button" type="submit" aria-label="Send message" title="Send message"><svg class="ico i-send" aria-hidden="true"><use href="#i-send"/></svg><span class="spinner" aria-hidden="true"></span></button>
+          </div>
+        </div>
+        <p class="composer-hint">Enter to send · Shift + Enter for a new line</p>
+      </form>
+      <div id="app-notice" class="toast" role="status"></div>
+      <div id="notification-toasts" class="notification-toasts" aria-live="polite" aria-label="New message notifications"></div>
+    </section>
+  </div>
+
+  <dialog id="profile-dialog" class="modal profile-modal">
+    <form id="profile-form">
+      <div class="modal-header"><div><p class="eyebrow">PROFILE</p><h2>Edit profile</h2></div><button class="icon-button" type="button" data-close-profile aria-label="Close profile editor">×</button></div>
+      <div class="profile-editor">
+        <div class="avatar-editor">
+          <div id="profile-avatar-preview" class="profile-avatar" role="img" aria-label="Profile avatar preview">?</div>
+          <input id="profile-avatar-input" type="file" accept="image/jpeg,image/png,image/webp" class="hidden">
+          <div class="avatar-actions">
+            <button id="upload-photo" class="button subtle" type="button">Upload photo</button>
+            <button id="cancel-photo-selection" class="button subtle hidden" type="button">Cancel selection</button>
+            <button id="remove-photo" class="button subtle danger" type="button">Remove photo</button>
+          </div>
+          <p id="avatar-upload-status" class="muted small-text" role="status" aria-live="polite"></p>
+        </div>
+        <div class="profile-fields">
+          <label class="field">Display name
+            <input id="profile-display-name" type="text" maxlength="40" placeholder="Your display name" required>
+          </label>
+          <label class="field">Username
+            <input id="profile-username" type="text" maxlength="30" placeholder="your-handle">
+          </label>
+          <label class="field">Status message
+            <input id="profile-status" type="text" maxlength="80" placeholder="Available to chat">
+          </label>
+          <label class="field">Bio
+            <textarea id="profile-bio" rows="4" maxlength="180" placeholder="Tell people a little about yourself"></textarea>
+            <span id="profile-bio-counter" class="counter">0/180</span>
+          </label>
+        </div>
+      </div>
+      <p id="profile-message" class="notice" role="status"></p>
+      <div class="modal-actions">
+        <button id="profile-cancel" class="button subtle" type="button">Cancel</button>
+        <button id="save-profile" class="button primary" type="submit">Save changes</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="view-profile-dialog" class="modal profile-modal view-profile-modal" aria-labelledby="view-profile-title">
+    <div class="modal-header"><div><p class="eyebrow">PROFILE</p><h2 id="view-profile-title">Profile</h2></div><button id="close-view-profile" class="icon-button" type="button" aria-label="Close profile">×</button></div>
+    <div class="view-profile-content">
+      <div id="view-profile-avatar" class="profile-avatar" role="img" aria-label="Profile avatar">?</div>
+      <div class="view-profile-details">
+        <p id="view-profile-username" class="profile-username"></p>
+        <p id="view-profile-status" class="profile-status"></p>
+        <section class="view-profile-bio"><h3>About</h3><p id="view-profile-bio" class="muted"></p></section>
+      </div>
+    </div>
+    <p id="view-profile-message" class="notice" role="status" aria-live="polite"></p>
+    <div class="modal-actions">
+      <button id="view-profile-edit" class="button subtle hidden" type="button">Edit profile</button>
+      <button id="view-profile-start-chat" class="button primary hidden" type="button">Message</button>
+      <button id="view-profile-close" class="button subtle" type="button">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="directory-dialog" class="modal directory-modal" aria-labelledby="directory-title">
+    <div class="modal-header"><div><p class="eyebrow">COMMUNITY</p><h2 id="directory-title">Discover people</h2></div><button id="close-directory" class="icon-button" type="button" aria-label="Close directory">×</button></div>
+    <label class="field" for="directory-search">Search by display name or username
+      <input id="directory-search" type="search" maxlength="40" autocomplete="off" placeholder="Type at least 2 characters">
+    </label>
+    <p id="directory-message" class="muted small-text" role="status" aria-live="polite">Search ChatFlow profiles. Emails are not shown.</p>
+    <section id="directory-suggestions" class="directory-suggestions" aria-labelledby="directory-suggestions-title">
+      <h3 id="directory-suggestions-title">Suggested people</h3>
+      <p id="directory-suggestions-message" class="muted small-text" role="status" aria-live="polite">Finding people to connect with…</p>
+      <div id="directory-suggestion-results" class="directory-results"></div>
+    </section>
+    <div id="directory-results" class="directory-results"></div>
+    <div class="modal-actions"><button id="directory-close-button" class="button subtle" type="button">Close</button></div>
+  </dialog>
+
+  <dialog id="notification-settings-dialog" class="modal notification-settings-modal" aria-labelledby="notification-settings-title">
+    <div class="modal-header"><div><p class="eyebrow">PREFERENCES</p><h2 id="notification-settings-title">Notifications</h2></div><button id="close-notification-settings" class="icon-button" type="button" aria-label="Close notification settings">×</button></div>
+    <p id="notification-permission-status" class="muted small-text" role="status"></p>
+    <label class="notification-option"><span><strong>Desktop notifications</strong><small>Show alerts when ChatFlow is in the background.</small></span><input id="desktop-notifications-enabled" type="checkbox"></label>
+    <div class="push-option">
+      <div><strong>Mobile / closed-app push</strong><small id="push-notification-status">Requires a deployed push backend and VAPID setup.</small></div>
+      <button id="push-notifications-button" class="button subtle" type="button">Enable push</button>
+    </div>
+    <label class="notification-option"><span><strong>Notification sound</strong><small>Play a subtle tone for incoming messages.</small></span><input id="notification-sound-enabled" type="checkbox"></label>
+    <label class="notification-option"><span><strong>Message previews</strong><small>Show message text in desktop and push notifications.</small></span><input id="notification-previews-enabled" type="checkbox"></label>
+    <p id="notification-settings-message" class="notice" role="status" aria-live="polite"></p>
+    <div class="modal-actions"><button id="notification-settings-done" class="button subtle" type="button">Done</button></div>
+  </dialog>
+
+  <dialog id="image-preview-dialog" class="image-preview-dialog">
+    <button id="close-image-preview" class="icon-button" type="button" aria-label="Close image preview">×</button>
+    <img id="image-preview-full" alt="Full-size conversation attachment">
+  </dialog>
+
+  <dialog id="new-chat-dialog" class="modal">
+    <form id="new-chat-form" method="dialog">
+      <div class="modal-header"><div><p class="eyebrow">LET'S CONNECT</p><h2>Start a conversation</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="Close">×</button></div>
+      <label class="field">Conversation type
+        <select id="conversation-type"><option value="direct">Private message</option><option value="group">Group chat</option></select>
+      </label>
+      <label class="field">Conversation name <span class="optional">(group only)</span>
+        <input id="group-name" maxlength="80" placeholder="e.g. Project Team">
+      </label>
+      <label class="field">Add people <span class="muted small-text">(email addresses, comma-separated)</span>
+        <input id="member-emails" type="text" required placeholder="alex@example.com, sam@example.com">
+      </label>
+      <p class="hint">People must have registered with ChatFlow before you can add them.</p>
+      <p id="new-chat-message" class="notice" role="status"></p>
+      <div class="modal-actions"><button class="button subtle" type="button" data-close-dialog>Cancel</button><button id="create-conversation" class="button primary" type="submit">Create conversation</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="info-dialog" class="modal">
+    <form method="dialog">
+      <div class="modal-header"><div><p class="eyebrow">DETAILS</p><h2>Conversation info</h2></div><button class="icon-button" value="cancel" aria-label="Close">×</button></div>
+      <h3 id="info-title">Conversation</h3>
+      <p id="info-description" class="muted"></p>
+      <div id="info-members" class="member-list"></div>
+      <div class="modal-actions"><button class="button subtle" value="cancel">Close</button></div>
+    </form>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./js/config.js"></script>
+  <script src="./js/app.js?v=16"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 220" role="img" aria-label="ChatFlow logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a1224"/>
+      <stop offset="1" stop-color="#0e1428"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9d8cff"/>
+      <stop offset="0.5" stop-color="#7d6df7"/>
+      <stop offset="1" stop-color="#5b5ee8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="14" flood-color="#0e1428" flood-opacity="0.42"/>
+    </filter>
+  </defs>
+
+  <g transform="translate(20 20)" filter="url(#shadow)">
+    <rect width="180" height="180" rx="52" fill="url(#bg)"/>
+    <rect x="15" y="15" width="150" height="150" rx="42" fill="url(#brand)"/>
+    <path d="M124 54c-24-21-54-32-88-32-74 0-134 60-134 134s60 134 134 134c31 0 60-10 84-28l-31-29c-17 14-38 22-63 22-54 0-98-44-98-98s44-98 98-98c25 0 48 9 65 24l31-29Z" fill="#fff" opacity="0.95"/>
+    <path d="M104 89h-41c-41 0-74 33-74 74s33 74 74 74h72c12 0 22-10 22-22v-17c0-12-10-22-22-22H63c-21 0-38-17-38-38s17-38 38-38h41c7 0 13 6 13 13v18c0 7-6 13-13 13h-17c-12 0-22 10-22 22s10 22 22 22h44l38 36c-7 6-16 10-26 10H63c-44 0-80-36-80-80s36-80 80-80h41c7 0 13 6 13 13v18c0 7-6 13-13 13Z" fill="#fff"/>
+    <circle cx="63" cy="115" r="8" fill="#5c5fe8"/>
+    <circle cx="90" cy="115" r="8" fill="#5c5fe8"/>
+    <circle cx="117" cy="115" r="8" fill="#5c5fe8"/>
+  </g>
+
+  <g transform="translate(230 60)">
+    <text x="0" y="64" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="58" font-weight="800" letter-spacing="-2.2" fill="#edf3ff">Chat</text>
+    <text x="176" y="64" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="58" font-weight="800" letter-spacing="-2.2" fill="#8e7bff">Flow</text>
+    <text x="0" y="106" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="20" font-weight="500" letter-spacing="4" fill="#8a95b3">SMART CONVERSATIONS</text>
+  </g>
+</svg>
