@@ -11,7 +11,7 @@
     savingProfile: false, avatarRefreshTimer: null, conversations: [], activeId: null,
     messages: [], subscriptions: [], isRegister: false, deferredInstall: null, appInstalled: false,
     typingTimeout: null, typingChannel: null, toastTimeout: null,
-    hasOlderMessages: false, loadingOlderMessages: false, reactions: [], readReceipts: [],
+    hasOlderMessages: false, loadingOlderMessages: false, reactions: [], readReceipts: [], deliveryReceipts: [],
     selectedAttachment: null, attachmentPreviewUrl: null, recorder: null,
     recordingStream: null, recordingChunks: [], recordingStartedAt: 0,
     recordingTimer: null, recordingPausedAt: 0, recordingPausedDuration: 0,
@@ -54,6 +54,9 @@
     }
     if (/heartbeat_chat_presence|user_presence|last_seen_at/i.test(errorText)) {
       return "Contact online status is not configured yet. Run supabase/contact_presence.sql in the Supabase SQL Editor.";
+    }
+    if (/mark_messages?_delivered|message_deliveries|delivered_at/i.test(errorText)) {
+      return "Message delivery status is not configured yet. Run supabase/message_delivery.sql in the Supabase SQL Editor.";
     }
     if (/set_direct_contact_hidden|hidden_at/i.test(errorText)) {
       return "Contact removal is not configured yet. Run supabase/contact_management.sql in the Supabase SQL Editor.";
@@ -664,6 +667,7 @@
     if (error) toast(friendlyError(error));
     state.user = null; state.profile = null; state.activeId = null;
     state.conversations = []; state.messages = [];
+    state.reactions = []; state.readReceipts = []; state.deliveryReceipts = [];
     state.contactPresence.clear();
     state.unreadCounts.clear();
     state.seenIncomingMessageIds.clear();
@@ -848,6 +852,7 @@
     state.messages = [];
     state.reactions = [];
     state.readReceipts = [];
+    state.deliveryReceipts = [];
     state.hasOlderMessages = false;
     $("load-older").classList.add("hidden");
     updateActiveHeader(c);
@@ -867,6 +872,11 @@
       state.messages = await signMessageAttachments(page.slice(0, MESSAGE_PAGE_SIZE).reverse());
       $("load-older").classList.toggle("hidden", !state.hasOlderMessages);
       await refreshMessageMetadata();
+      try {
+        await markMessagesDelivered(state.messages);
+      } catch (deliveryError) {
+        toast(friendlyError(deliveryError));
+      }
       renderMessages();
       await refreshUnreadCounts();
       await subscribeToMessages(id);
@@ -920,14 +930,27 @@
   async function refreshMessageMetadata() {
     if (!state.messages.length) return;
     const ids = state.messages.map(message => message.id);
-    const [reactions, receipts] = await Promise.all([
+    const [reactions, receipts, deliveries] = await Promise.all([
       state.supabase.from("message_reactions").select("message_id, user_id, emoji").in("message_id", ids),
-      state.supabase.from("message_reads").select("message_id, user_id, read_at").in("message_id", ids)
+      state.supabase.from("message_reads").select("message_id, user_id, read_at").in("message_id", ids),
+      state.supabase.from("message_deliveries").select("message_id, user_id, delivered_at").in("message_id", ids)
     ]);
     if (reactions.error) throw reactions.error;
     if (receipts.error) throw receipts.error;
+    if (deliveries.error) throw deliveries.error;
     state.reactions = reactions.data || [];
     state.readReceipts = receipts.data || [];
+    state.deliveryReceipts = deliveries.data || [];
+  }
+  async function markMessagesDelivered(messages) {
+    const messageIds = [...new Set(messages
+      .filter(message => message.sender_id !== state.user.id
+        && !state.deliveryReceipts.some(receipt => receipt.message_id === message.id && receipt.user_id === state.user.id))
+      .map(message => message.id))];
+    if (!messageIds.length) return;
+    const { error } = await state.supabase.rpc("mark_messages_delivered", { target_messages: messageIds });
+    if (error) throw error;
+    await refreshMessageMetadata();
   }
   async function markMessagesRead(messages) {
     const unread = messages.filter(message => message.sender_id !== state.user.id
@@ -999,7 +1022,26 @@
         const users = state.reactions.filter(reaction => reaction.message_id === m.id && reaction.emoji === emoji);
         return users.length ? `<button class="reaction-chip ${users.some(reaction => reaction.user_id === state.user.id) ? "selected" : ""}" type="button" data-action="react" data-id="${escapeText(m.id)}" data-emoji="${emoji}">${emoji} ${users.length}</button>` : "";
       }).join("");
-      const hasRead = mine && state.readReceipts.some(receipt => receipt.message_id === m.id && receipt.user_id !== state.user.id);
+      const readers = mine
+        ? state.readReceipts.filter(receipt => receipt.message_id === m.id && receipt.user_id !== state.user.id)
+        : [];
+      const deliveries = mine
+        ? state.deliveryReceipts.filter(receipt => receipt.message_id === m.id && receipt.user_id !== state.user.id)
+        : [];
+      const statusState = m.delivery_state === "sending" ? "sending"
+        : readers.length ? "seen"
+          : deliveries.length ? "delivered" : "sent";
+      const directRecipient = activeChat?.type === "direct"
+        ? activeChat.members.find(item => item.user_id !== state.user.id) : null;
+      const status = !mine ? ""
+        : statusState === "seen" ? directRecipient
+          ? `<span class="message-status seen" title="Seen by ${escapeText(directRecipient.profile.display_name)}" aria-label="Seen by ${escapeText(directRecipient.profile.display_name)}"><span class="status-sr-only">Seen</span><span class="message-status-avatar" data-read-avatar="${escapeText(directRecipient.user_id)}"></span></span>`
+          : `<span class="message-status seen" title="Seen by ${readers.length} ${readers.length === 1 ? "person" : "people"}" aria-label="Seen by ${readers.length} ${readers.length === 1 ? "person" : "people"}"><span class="status-sr-only">Seen</span>${readers.slice(0, 3).map(receipt => `<span class="message-status-avatar" data-read-avatar="${escapeText(receipt.user_id)}"></span>`).join("")}</span>`
+          : `<span class="message-status ${statusState}" title="${statusState === "sending" ? "Sending" : statusState === "delivered" ? "Delivered" : "Sent"}" aria-label="${statusState === "sending" ? "Sending" : statusState === "delivered" ? "Delivered" : "Sent"}"><span class="status-sr-only">${statusState === "sending" ? "Sending" : statusState === "delivered" ? "Delivered" : "Sent"}</span><svg viewBox="0 0 20 20" aria-hidden="true">${statusState === "sending"
+            ? `<circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="2"/>`
+            : statusState === "delivered"
+              ? `<circle cx="10" cy="10" r="9" fill="currentColor"/><path d="m5.5 10 3 3 6-6" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/>`
+              : `<circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="m6 10 2.5 2.5L13.5 7.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"/>`}</svg></span>`;
       const actions = `<div class="message-actions">
         <button type="button" data-action="copy" data-id="${escapeText(m.id)}" aria-label="Copy message" title="Copy">${ico("copy")}</button>
         <button type="button" data-action="react" data-id="${escapeText(m.id)}" data-emoji="👍" aria-label="React with thumbs up">👍</button>
@@ -1013,8 +1055,8 @@
         <div class="message-body">${senderLabel}
           <div class="message-bubble">${m.attachment_path ? renderAttachment(m) : ""}${m.content ? `<div class="message-text">${escapeText(m.content)}</div>` : ""}</div>
           ${summary ? `<div class="message-reactions">${summary}</div>` : ""}
-          ${actions}
-          <div class="message-time">${escapeText(date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}${m.edited_at ? " · edited" : ""}${hasRead ? " · seen" : ""}</div>
+          ${m.delivery_state === "sending" ? "" : actions}
+          <div class="message-time${mine ? " has-status" : ""}"><span class="message-timestamp">${escapeText(date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}${m.edited_at ? " · edited" : ""}</span>${status}</div>
         </div></article>`;
     }).join("");
     box.querySelectorAll("[data-message-avatar]").forEach(element => {
@@ -1022,6 +1064,11 @@
       const member = state.conversations.find(c => c.id === state.activeId)?.members.find(x => x.user_id === userId);
       const profile = userId === state.user.id ? state.profile : member?.profile || null;
       applyAvatarStyles(element, profile, initials(userId === state.user.id ? getProfileDisplayName() : member?.profile.display_name));
+    });
+    box.querySelectorAll("[data-read-avatar]").forEach(element => {
+      const userId = element.dataset.readAvatar;
+      const member = activeChat?.members.find(item => item.user_id === userId);
+      applyAvatarStyles(element, member?.profile, initials(member?.profile.display_name));
     });
     if (scrollToBottom) box.scrollTop = box.scrollHeight;
     if ("IntersectionObserver" in window) {
@@ -1057,6 +1104,7 @@
         state.messages = state.messages.filter(message => message.id !== payload.old.id);
         state.reactions = state.reactions.filter(reaction => reaction.message_id !== payload.old.id);
         state.readReceipts = state.readReceipts.filter(receipt => receipt.message_id !== payload.old.id);
+        state.deliveryReceipts = state.deliveryReceipts.filter(receipt => receipt.message_id !== payload.old.id);
         renderMessages(false);
       }).subscribe();
     channel.__kind = "messages";
@@ -1068,6 +1116,11 @@
         refreshMessageMetadata().then(() => renderMessages(false)).catch(error => toast(friendlyError(error)));
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "message_reads" }, payload => {
+        const messageId = payload.new?.message_id || payload.old?.message_id;
+        if (!messageId || !state.messages.some(message => message.id === messageId)) return;
+        refreshMessageMetadata().then(() => renderMessages(false)).catch(error => toast(friendlyError(error)));
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "message_deliveries" }, payload => {
         const messageId = payload.new?.message_id || payload.old?.message_id;
         if (!messageId || !state.messages.some(message => message.id === messageId)) return;
         refreshMessageMetadata().then(() => renderMessages(false)).catch(error => toast(friendlyError(error)));
@@ -1087,6 +1140,15 @@
     if (!state.user || !message?.id || message.sender_id === state.user.id || !rememberIncomingMessage(message.id)) return;
     const conversation = state.conversations.find(item => item.id === message.conversation_id);
     if (!conversation) return;
+
+    try {
+      const { error: deliveredError } = await state.supabase.rpc("mark_message_delivered", {
+        target_message: message.id
+      });
+      if (deliveredError) throw deliveredError;
+    } catch (error) {
+      toast(friendlyError(error));
+    }
 
     conversation.lastMessage = message;
     renderConversations();
@@ -1422,10 +1484,29 @@
     const button = $("message-form").querySelector('[type="submit"]');
     button.disabled = true;
     setSendState(attachment ? "Uploading…" : "Sending…");
+    let messageId = null;
     let uploadedPath = null;
     try {
+      messageId = crypto.randomUUID();
+      const pendingMessage = {
+        id: messageId,
+        conversation_id: conversationId,
+        sender_id: state.user.id,
+        content,
+        message_type: attachment ? attachment.kind : "text",
+        attachment_path: attachment ? "pending" : null,
+        attachment_name: attachment?.name || null,
+        attachment_mime: attachment?.mime || null,
+        attachment_size: attachment?.file.size || null,
+        attachment_url: attachment ? state.attachmentPreviewUrl : null,
+        created_at: new Date().toISOString(),
+        delivery_state: "sending"
+      };
+      if (state.activeId === conversationId) {
+        state.messages.push(pendingMessage);
+        renderMessages();
+      }
       await broadcastTyping(false);
-      const messageId = crypto.randomUUID();
       let attachmentPath = null;
       if (attachment) {
         const extension = attachment.name.includes(".") ? `.${attachment.name.split(".").pop().toLowerCase()}` : "";
@@ -1450,13 +1531,20 @@
       input.style.height = "auto";
       if (state.selectedAttachment === attachment) clearSelectedAttachment();
       const [signedMessage] = await signMessageAttachments([data]);
-      if (state.activeId === conversationId && !state.messages.some(message => message.id === signedMessage.id)) {
-        state.messages.push(signedMessage);
+      signedMessage.delivery_state = "sent";
+      if (messageId && state.activeId === conversationId) {
+        const existingIndex = state.messages.findIndex(message => message.id === signedMessage.id);
+        if (existingIndex < 0) state.messages.push(signedMessage);
+        else state.messages[existingIndex] = { ...signedMessage, delivery_state: "sent" };
         renderMessages();
       }
       const c = state.conversations.find(x => x.id === conversationId);
       if (c) { c.lastMessage = signedMessage; renderConversations(); }
     } catch (error) {
+      if (state.activeId === conversationId) {
+        state.messages = state.messages.filter(message => message.id !== messageId);
+        renderMessages(false);
+      }
       let message = friendlyError(error);
       if (uploadedPath) {
         const { error: cleanupError } = await state.supabase.storage.from(ATTACHMENT_BUCKET).remove([uploadedPath]);
@@ -1512,6 +1600,7 @@
         state.messages = state.messages.filter(item => item.id !== id);
         state.reactions = state.reactions.filter(reaction => reaction.message_id !== id);
         state.readReceipts = state.readReceipts.filter(receipt => receipt.message_id !== id);
+        state.deliveryReceipts = state.deliveryReceipts.filter(receipt => receipt.message_id !== id);
         if (message.attachment_path) {
           const { error: removeError } = await state.supabase.storage.from(ATTACHMENT_BUCKET).remove([message.attachment_path]);
           if (removeError) toast(`Message deleted, but attachment cleanup failed: ${friendlyError(removeError)}`);

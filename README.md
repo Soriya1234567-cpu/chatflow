@@ -13,7 +13,7 @@ A real-time private and group chat starter built with HTML, CSS, vanilla JavaScr
 - Message history stored in PostgreSQL
 - Cursor-paginated message history
 - Author-only message editing and deletion
-- Emoji reactions and read receipts
+- Emoji reactions and sending, sent, delivered, and seen message statuses
 - Private photo, video, and voice message attachments
 - Voice recording with pause/resume, preview, and cancel
 - Typing indicator (Realtime Broadcast)
@@ -43,6 +43,7 @@ A real-time private and group chat starter built with HTML, CSS, vanilla JavaScr
 12. Run `supabase/group_chat_management.sql` to add group photos and owner-only group detail updates.
 13. Run `supabase/contact_management.sql` to enable per-user removal and restoration of direct-chat contacts.
 14. Run `supabase/contact_presence.sql` to enable live online and last-seen status for conversation contacts.
+15. Run `supabase/message_delivery.sql` after `schema.sql` and `messaging_media.sql` to enable sent, delivered, and seen message statuses.
 
 Never put a `service_role` or secret key in `js/config.js`, source control, or any browser code.
 
@@ -99,7 +100,7 @@ Service workers require HTTPS or localhost. Do not open the HTML file directly.
 10. Open a group’s **Conversation info** to change its name or photo (only the group creator can edit these details).
 11. In a group’s **Conversation info**, add contacts from your direct chats; verify only new members gain access to the group.
 12. As the group creator, delete a test group and confirm it disappears for all members. Verify a non-owner cannot delete it.
-13. Send text, photos, videos, and voice messages between the two users; verify previews, reactions, visible-message read receipts, editing, and deletion.
+13. Send text, photos, videos, and voice messages between the two users; verify previews, reactions, sending/sent/delivered/seen indicators, editing, and deletion.
 14. Record a voice message, pause/resume it, stop and preview it, then try canceling a recording and an in-progress upload.
 15. Load older messages and confirm only conversation members can open signed attachment links.
 
@@ -114,7 +115,7 @@ Each browser session must be signed into a different user. If email confirmation
 - The service worker caches the static app shell only.
 - Authentication, message history, and live messaging require a network connection. Offline caching does not make the backend or message sending work offline.
 - Unread counts reconcile from database read receipts after reconnect. Browser notifications require the page/service worker and permission; delivery while the PWA is closed requires the separately deployed Web Push backend below.
-- If you change static assets, bump `CACHE_NAME` in `service-worker.js` (for example `chatflow-shell-v24`).
+- If you change static assets, bump `CACHE_NAME` in `service-worker.js` (for example `chatflow-shell-v25`).
 
 ## 6. Messaging and attachment setup
 
@@ -122,6 +123,7 @@ Each browser session must be signed into a different user. If email confirmation
 - Run `supabase/group_chat_management.sql` after `schema.sql` and the messaging/profile migrations. It adds the `group_avatar_path` column and private `group-avatars` bucket, a function allowing group members to add their direct-chat contacts, and an owner-only group deletion function. Group creators (not other members) can update group names/photos. Existing deployments must apply this migration before using group management.
 - Run `supabase/contact_management.sql` after `schema.sql`. It adds a per-user hidden state and a secured function for removing or restoring direct-chat contacts. Removing a contact only hides that direct conversation from the current user's list; it does not delete messages or change the other person's list. Opening that person's profile and starting a chat restores the conversation.
 - Run `supabase/contact_presence.sql` after `schema.sql` to show live online status and how long a contact has been offline. A 30-second heartbeat updates last-seen time; a contact is shown online for up to 90 seconds after their last heartbeat. Offline time is approximate, particularly if their browser is backgrounded or loses its connection.
+- Run `supabase/message_delivery.sql` after `schema.sql` and `messaging_media.sql` for outgoing message status indicators. **Sending** appears while a message is in flight; **Sent** means Supabase accepted it; **Delivered** is recorded when the recipient's connected ChatFlow app receives it; **Seen** appears when their read receipt is recorded. Seen messages show the reader's avatar. Delivery indicators require the recipient's app to be connected; they do not represent push-notification delivery.
 - If messaging media was already configured, rerun the updated `supabase/messaging_media.sql` to allow voice messages alongside photo and video uploads.
 - If `messaging_media.sql` was applied before its Storage policies were scoped by bucket, run `supabase/storage_policy_scope_fix.sql` once before `profile_discovery.sql`. The restrictive attachment policies must apply only to `chat-attachments`, not unrelated Storage buckets such as `avatars`.
 - The attachment picker accepts JPEG, PNG, and WebP photos plus MP4 and WebM videos. Files are limited to 25 MB and checked against their content signatures in the browser as well as bucket MIME/size limits.
@@ -197,7 +199,7 @@ Each browser session must be signed into a different user. If email confirmation
 - Conversation creation is handled by a database function that includes the caller and validates member IDs.
 - The app uses only a browser-safe public Supabase key. Never use the service-role key client-side.
 - The email lookup RPC remains for creating conversations from an explicitly entered email. The directory uses separate RPCs that do not return email addresses; add abuse controls or rate limits before exposing a large public service.
-- Closed-app push is not active until VAPID secrets, the Edge Function, and database webhook have all been configured and deployed. Web Push is best-effort and subject to browser/OS delivery behavior. End-to-end encryption, group member removal, message search, and explicit delivered-status indicators are not implemented.
+- Closed-app push is not active until VAPID secrets, the Edge Function, and database webhook have all been configured and deployed. Web Push is best-effort and subject to browser/OS delivery behavior. End-to-end encryption, group member removal, and message search are not implemented.
 - Typing state is sent via Realtime Broadcast and is ephemeral; it is not persisted.
 - Apply Supabase Auth rate limits, configure email templates/redirects, and review RLS policies before deploying to real users.
 - Group members can read all messages in their group. Any current member can add their direct-chat contacts; only the group creator can delete the group or edit its details.

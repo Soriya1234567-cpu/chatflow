@@ -351,9 +351,19 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .message-bubble:has(.message-image, .message-video) { padding: 4px; }
 .message-bubble:has(.message-image, .message-video) .message-text { padding: 7px 10px 5px; }
 .message-text { white-space: pre-wrap; }
-.message-time { display: none; margin: 5px 6px 0; color: var(--muted); font-size: 10.5px; }
-.message-row.is-last .message-time { display: block; }
-.message-row.mine .message-time, .message-row.mine .message-sender { text-align: right; }
+.message-time { display: none; align-items: center; gap: 5px; margin: 5px 6px 0; color: var(--muted); font-size: 10.5px; }
+.message-row.is-last .message-time, .message-time.has-status { display: flex; }
+.message-row:not(.is-last) .message-timestamp { display: none; }
+.message-row.mine .message-time { justify-content: flex-end; }
+.message-row.mine .message-sender { text-align: right; }
+.message-status { display: inline-flex; align-items: center; justify-content: center; color: #63a8ff; vertical-align: middle; }
+.message-status svg { display: block; width: 15px; height: 15px; }
+.message-status.sending svg { animation: status-pulse 1.2s ease-in-out infinite; }
+.message-status.delivered { color: #1687ff; }
+.message-status.seen { gap: 2px; }
+.message-status-avatar { display: inline-block; width: 18px; height: 18px; flex: 0 0 auto; border: 1.5px solid #fff; border-radius: 50%; background-color: var(--surface-raised); background-size: cover; background-position: center; }
+.status-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
+@keyframes status-pulse { 50% { opacity: .45; } }
 .message-actions { position: absolute; z-index: 3; top: -32px; display: flex; gap: 1px; border: 1px solid var(--border-strong); border-radius: 12px; padding: 3px; background: #212735; box-shadow: var(--shadow-sm); opacity: 0; pointer-events: none; transform: translateY(3px); transition: opacity var(--ease), transform var(--ease); }
 .message-row:not(.mine) .message-actions { left: 0; }
 .message-row.mine .message-actions { right: 0; }
