@@ -2244,6 +2244,10 @@
       }
     });
     $("discover-people").addEventListener("click", openPeopleDirectory);
+    $("open-install-guide").addEventListener("click", openInstallGuide);
+    $("open-install-guide-auth").addEventListener("click", openInstallGuide);
+    $("close-install-guide").addEventListener("click", () => $("install-guide-dialog").close());
+    $("install-guide-done").addEventListener("click", () => $("install-guide-dialog").close());
     $("directory-search").addEventListener("input", () => {
       const hasSearchTerm = !!$("directory-search").value.trim();
       $("directory-suggestions").classList.toggle("hidden", hasSearchTerm);
@@ -2419,15 +2423,49 @@
       navigator.serviceWorker.addEventListener("controllerchange", updateServiceWorkerConversationState);
     }
     window.addEventListener("beforeinstallprompt", e => {
-      e.preventDefault(); state.deferredInstall = e; $("install-app").classList.remove("hidden");
+      e.preventDefault();
+      state.deferredInstall = e;
+      $("install-app").classList.remove("hidden");
+      $("install-guide-prompt").classList.remove("hidden");
     });
-    $("install-app").addEventListener("click", async () => {
-      if (!state.deferredInstall) return;
-      state.deferredInstall.prompt();
-      await state.deferredInstall.userChoice;
-      state.deferredInstall = null; $("install-app").classList.add("hidden");
+    $("install-app").addEventListener("click", () => promptInstallApp().catch(error => toast(`Could not start installation: ${friendlyError(error)}`)));
+    $("install-guide-prompt").addEventListener("click", () => promptInstallApp().catch(error => toast(`Could not start installation: ${friendlyError(error)}`)));
+    window.addEventListener("appinstalled", () => {
+      $("install-app").classList.add("hidden");
+      $("install-guide-prompt").classList.add("hidden");
+      $("install-guide-installed").classList.remove("hidden");
+      toast("ChatFlow installed.");
     });
-    window.addEventListener("appinstalled", () => toast("ChatFlow installed."));
+  }
+  function getInstallPlatform() {
+    const userAgent = navigator.userAgent || "";
+    if (/Android/i.test(userAgent)) return "android";
+    if (/iPhone|iPad|iPod/i.test(userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) return "ios";
+    return "other";
+  }
+  function openInstallGuide() {
+    const dialog = $("install-guide-dialog");
+    const platform = getInstallPlatform();
+    const isInstalled = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+    dialog.dataset.platform = platform;
+    $("install-guide-device").textContent = platform === "android"
+      ? "For Android, Chrome is recommended. Follow the steps below to add ChatFlow to your Home screen."
+      : platform === "ios"
+        ? "For iPhone and iPad, use Safari and follow the steps below to add ChatFlow to your Home screen."
+        : "Choose the instructions for your phone, or use your browser's install option if one is available.";
+    $("install-guide-installed").classList.toggle("hidden", !isInstalled);
+    $("install-guide-prompt").classList.toggle("hidden", !state.deferredInstall || isInstalled);
+    if (!dialog.open) dialog.showModal();
+  }
+  async function promptInstallApp() {
+    if (!state.deferredInstall) return;
+    const installPrompt = state.deferredInstall;
+    state.deferredInstall = null;
+    $("install-app").classList.add("hidden");
+    $("install-guide-prompt").classList.add("hidden");
+    await installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === "accepted") $("install-guide-installed").classList.remove("hidden");
   }
   async function init() {
     wireEvents();

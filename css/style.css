@@ -171,6 +171,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .auth-switch { margin: 22px 0; color: var(--text-secondary); font-size: 12px; text-align: center; }
 .link-button { border: 0; padding: 4px; background: transparent; color: #b6aafd; font-weight: 700; }
 .link-button:hover { color: #d0c8ff; }
+.auth-install-button { display: flex; width: 100%; align-items: center; justify-content: center; gap: 8px; margin-top: 5px; }
+.auth-install-button .ico { width: 16px; height: 16px; }
 .fine-print { margin: 23px 0 0; color: var(--muted); font-size: 10px; text-align: center; }
 .notice { min-height: 16px; color: var(--danger); font-size: 12px; line-height: 1.5; }
 .notice.success { color: var(--green); }
@@ -445,6 +447,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .modal h2 { margin: 0; font-size: 22px; font-weight: 690; letter-spacing: -0.045em; }
 .modal h3 { font-size: 14px; }
 .modal .field { margin: 16px 0; }
+.install-guide-modal { width: min(92vw, 560px); }
+.install-guide-intro { margin: -7px 0 16px; line-height: 1.6; }
+.install-guide-platform { margin: 12px 0; border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; background: rgba(255,255,255,.025); }
+.install-guide-platform h3 { margin: 0 0 9px; font-size: 13px; }
+.install-guide-platform ol { display: grid; gap: 8px; margin: 0; padding-left: 21px; color: var(--text-secondary); font-size: 12px; line-height: 1.55; }
+.install-guide-platform li::marker { color: #a99afb; font-weight: 700; }
+.install-guide-platform strong { color: var(--text); }
+.install-guide-modal[data-platform="android"] [data-platform="android"],
+.install-guide-modal[data-platform="ios"] [data-platform="ios"] { border-color: rgba(141,122,245,.5); background: rgba(124,108,246,.08); }
+.install-guide-requirement { margin: 15px 2px 0; line-height: 1.55; }
 .optional, .hint { color: var(--text-secondary); font-size: 11px; font-weight: 400; }
 .hint { line-height: 1.6; }
 .modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; margin-top: 22px; }

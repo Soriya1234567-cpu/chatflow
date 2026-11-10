@@ -105,11 +105,14 @@ Each browser session must be signed into a different user. If email confirmation
 
 ## 5. PWA installation and offline behavior
 
-- On localhost or an HTTPS deployment, use the browser's Install option or the in-app Install button if the browser exposes it.
+- The **Install ChatFlow on this device** button on the sign-in screen and the install guide in the conversation list explain mobile steps for Android/Chrome and iPhone/iPad/Safari.
+- On Android, open ChatFlow in Chrome, tap **⋮**, then **Install app** or **Add to Home screen**, and confirm.
+- On iPhone or iPad, open ChatFlow in Safari, tap **Share**, choose **Add to Home Screen**, then tap **Add**. If the option is missing, scroll the share sheet or add the action from **Edit Actions**.
+- On browsers that support it, the in-app guide also provides an **Install ChatFlow** button. Installation requires a secure context (HTTPS, or localhost for development); private browsing or unsupported browsers may not offer installation.
 - The service worker caches the static app shell only.
 - Authentication, message history, and live messaging require a network connection. Offline caching does not make the backend or message sending work offline.
 - Unread counts reconcile from database read receipts after reconnect. Browser notifications require the page/service worker and permission; delivery while the PWA is closed requires the separately deployed Web Push backend below.
-- If you change static assets, bump `CACHE_NAME` in `service-worker.js` (for example `chatflow-shell-v21`).
+- If you change static assets, bump `CACHE_NAME` in `service-worker.js` (for example `chatflow-shell-v22`).
 
 ## 6. Messaging and attachment setup
 

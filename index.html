@@ -8,7 +8,7 @@
   <title>ChatFlow — Real-time chat</title>
   <link rel="icon" href="./assets/icons/icon.svg" type="image/svg+xml">
   <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./css/style.css?v=21">
+  <link rel="stylesheet" href="./css/style.css?v=22">
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
@@ -52,6 +52,7 @@
       </form>
       <p id="auth-message" class="notice" role="status"></p>
       <p class="auth-switch"><span id="auth-switch-label">New to ChatFlow?</span> <button id="auth-switch" class="link-button" type="button">Create an account</button></p>
+      <button id="open-install-guide-auth" class="button subtle auth-install-button" type="button"><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg><span>Install ChatFlow on this device</span></button>
       <p class="fine-print">By continuing, you agree to use ChatFlow respectfully.</p>
     </section>
   </main>
@@ -76,6 +77,7 @@
       <div class="section-heading"><span>MESSAGES</span><span class="message-counts"><span id="chat-count">0</span><span id="total-unread-badge" class="unread-badge hidden" aria-label="Unread messages">0</span></span></div>
       <label class="search-box"><svg class="ico" aria-hidden="true"><use href="#i-search"/></svg><input id="chat-search" type="search" placeholder="Search conversations" aria-label="Search conversations"></label>
       <button id="discover-people" class="button subtle discover-button" type="button"><svg class="ico" aria-hidden="true"><use href="#i-compass"/></svg><span>Discover people</span></button>
+      <button id="open-install-guide" class="button subtle discover-button install-guide-button" type="button"><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg><span>Install ChatFlow</span></button>
       <div id="conversation-list" class="conversation-list">
         <div class="empty-sidebar">Your conversations will appear here.</div>
       </div>
@@ -208,6 +210,39 @@
     <div class="modal-actions"><button id="notification-settings-done" class="button subtle" type="button">Done</button></div>
   </dialog>
 
+  <dialog id="install-guide-dialog" class="modal install-guide-modal" aria-labelledby="install-guide-title">
+    <div class="modal-header"><div><p class="eyebrow">CHATFLOW ON YOUR PHONE</p><h2 id="install-guide-title">Install ChatFlow</h2></div><button id="close-install-guide" class="icon-button" type="button" aria-label="Close install guide">×</button></div>
+    <p id="install-guide-device" class="muted install-guide-intro" role="status" aria-live="polite"></p>
+    <p id="install-guide-installed" class="notice hidden" role="status">ChatFlow is already installed on this device.</p>
+    <section class="install-guide-platform" data-platform="android" aria-labelledby="android-install-title">
+      <h3 id="android-install-title">Android · Chrome</h3>
+      <ol>
+        <li>Open ChatFlow in <strong>Chrome</strong> and tap the browser menu <strong>⋮</strong>.</li>
+        <li>Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li>
+        <li>Confirm <strong>Install</strong> or <strong>Add</strong>. Open ChatFlow from your Home screen.</li>
+      </ol>
+      <p class="hint">If you see an Install ChatFlow button below, you can use it instead.</p>
+    </section>
+    <section class="install-guide-platform" data-platform="ios" aria-labelledby="ios-install-title">
+      <h3 id="ios-install-title">iPhone or iPad · Safari</h3>
+      <ol>
+        <li>Open ChatFlow in <strong>Safari</strong> and tap the <strong>Share</strong> button.</li>
+        <li>Scroll the share sheet and tap <strong>Add to Home Screen</strong>. If you don't see it, scroll down and choose <strong>Edit Actions</strong> to add it.</li>
+        <li>Tap <strong>Add</strong>. Launch ChatFlow from its new Home screen icon.</li>
+      </ol>
+      <p class="hint">On iOS, use Safari for the most reliable Add to Home Screen option.</p>
+    </section>
+    <section class="install-guide-platform" data-platform="other" aria-labelledby="other-install-title">
+      <h3 id="other-install-title">Other browsers and devices</h3>
+      <p class="hint">On a supported mobile browser, open its menu and look for <strong>Install app</strong> or <strong>Add to Home screen</strong>. Menu names vary by browser. On desktop, look for the install icon in the address bar or browser menu.</p>
+    </section>
+    <p class="hint install-guide-requirement">Install ChatFlow from its secure HTTPS website. The install option may not appear in private browsing or unsupported browsers.</p>
+    <div class="modal-actions">
+      <button id="install-guide-prompt" class="button primary hidden" type="button">Install ChatFlow</button>
+      <button id="install-guide-done" class="button subtle" type="button">Done</button>
+    </div>
+  </dialog>
+
   <dialog id="notification-welcome-dialog" class="modal notification-welcome-modal" aria-labelledby="notification-welcome-title">
     <div class="notification-welcome-icon" aria-hidden="true"><svg class="ico"><use href="#i-bell"/></svg></div>
     <p class="eyebrow">STAY IN THE LOOP</p>
@@ -287,6 +322,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./js/config.js"></script>
-  <script src="./js/app.js?v=21"></script>
+  <script src="./js/app.js?v=22"></script>
 </body>
 </html>
