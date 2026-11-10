@@ -517,6 +517,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .directory-action:hover { background: rgba(124, 108, 246, 0.18); }
 .directory-empty { padding: 14px 12px; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
 .notification-settings-modal { width: min(92vw, 540px); }
+.notification-welcome-modal { width: min(92vw, 440px); text-align: center; }
+.notification-welcome-modal .eyebrow { margin: 0 0 8px; }
+.notification-welcome-modal > .muted { margin: 14px 0; line-height: 1.65; }
+.notification-welcome-modal .modal-actions { justify-content: center; }
+.notification-welcome-icon { display: grid; width: 58px; height: 58px; place-items: center; margin: 0 auto 17px; border: 1px solid rgba(124, 108, 246, 0.3); border-radius: 18px; background: var(--accent-soft); color: #c6baff; }
+.notification-welcome-icon .ico { width: 25px; height: 25px; }
 .notification-option, .push-option { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid var(--border); padding: 15px 0; }
 .notification-option span, .push-option > div { display: grid; gap: 5px; }
 .notification-option strong, .push-option strong { color: #e9ecf3; font-size: 13px; font-weight: 650; }

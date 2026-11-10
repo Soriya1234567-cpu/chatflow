@@ -117,7 +117,7 @@ Each browser session must be signed into a different user. If email confirmation
 
 ## 7. Message notifications and Web Push
 
-- The **bell** opens notification preferences. Desktop permission is requested only after the user enables desktop alerts. Sound and preview settings persist in Supabase; denied or unsupported browser notifications do not disable in-app toasts or unread counts.
+- The **bell** opens notification preferences. On first sign-in per account and browser, ChatFlow offers a notification welcome prompt; browser permission is requested only after the user chooses **Enable notifications**. Their choice not to enable is remembered for that browser. Desktop permission, sound, and preview settings are managed in preferences; denied or unsupported browser notifications do not disable in-app toasts or unread counts.
 - Unread counts are calculated from `message_reads`, are reflected in conversation/sidebar badges, the document title, and `navigator.setAppBadge` where supported. The existing message observer marks messages read when they become visible.
 - Apply `supabase/notifications.sql` after `schema.sql` and `messaging_media.sql`. Its policies limit notification preferences and push subscription data to their owner; the delivery ledger is service-role-only.
 - In `js/config.js`, set `VAPID_PUBLIC_KEY` to the **public** VAPID key. This key is safe to expose; never put the VAPID private key, `PUSH_WEBHOOK_SECRET`, or service-role key in the frontend.

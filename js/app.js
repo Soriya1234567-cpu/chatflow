@@ -16,6 +16,7 @@
     readObserver: null, pendingReadMessageIds: new Set(), directorySearchTimer: null,
     directoryRequestId: 0, directorySuggestionRequestId: 0, directoryProfiles: new Map(),
     profileRequestId: 0, viewedProfileId: null, contactingProfileIds: new Set(), unreadCounts: new Map(),
+    notificationWelcomeUsers: new Set(),
     notificationPreferences: { desktop_enabled: false, push_enabled: false, sound_enabled: true, previews_enabled: true },
     seenIncomingMessageIds: new Set(), notificationToasts: new Map(),
     serviceWorkerRegistration: null, audioContext: null, unreadSetupWarningShown: false,
@@ -279,7 +280,7 @@
       syncNotificationSettingsUI();
     }
   }
-  async function setDesktopNotifications(enabled) {
+  async function setDesktopNotifications(enabled, messageId = "notification-settings-message") {
     try {
       if (enabled) {
         if (!("Notification" in window)) throw new Error("Browser notifications are not supported.");
@@ -287,10 +288,12 @@
         if (permission !== "granted") throw new Error(permission === "denied" ? "Notifications are blocked in browser settings." : "Notification permission was not granted.");
       }
       await saveNotificationPreferences({ desktop_enabled: enabled });
-      notice("notification-settings-message", enabled ? "Desktop notifications are enabled." : "Desktop notifications are disabled.", true);
+      notice(messageId, enabled ? "Desktop notifications are enabled." : "Desktop notifications are disabled.", true);
+      return true;
     } catch (error) {
       $("desktop-notifications-enabled").checked = state.notificationPreferences.desktop_enabled;
-      notice("notification-settings-message", friendlyError(error));
+      notice(messageId, friendlyError(error));
+      return false;
     } finally {
       syncNotificationSettingsUI();
     }
@@ -503,6 +506,51 @@
       url.searchParams.delete("conversation");
       window.history.replaceState({}, "", url.href);
     }
+    maybeShowNotificationWelcome();
+  }
+  function hasSeenNotificationWelcome() {
+    if (!state.user) return true;
+    if (state.notificationWelcomeUsers.has(state.user.id)) return true;
+    try {
+      return window.localStorage.getItem(`chatflow-notification-welcome:${state.user.id}`) === "seen";
+    } catch (error) {
+      console.warn("Could not read notification welcome preference", error);
+      return false;
+    }
+  }
+  function markNotificationWelcomeSeen() {
+    if (!state.user) return;
+    state.notificationWelcomeUsers.add(state.user.id);
+    try {
+      window.localStorage.setItem(`chatflow-notification-welcome:${state.user.id}`, "seen");
+    } catch (error) {
+      console.warn("Could not save notification welcome preference", error);
+      toast("This browser could not save your notification choice. You may see this prompt again after reloading.");
+    }
+  }
+  function maybeShowNotificationWelcome() {
+    if (!state.user || state.notificationPreferences.desktop_enabled || hasSeenNotificationWelcome()) return;
+    const dialog = $("notification-welcome-dialog");
+    if (!dialog.open) {
+      notice("notification-welcome-message", "");
+      dialog.showModal();
+    }
+  }
+  async function enableNotificationsFromWelcome() {
+    const button = $("enable-first-login-notifications");
+    button.disabled = true;
+    $("notification-welcome-not-now").disabled = true;
+    const enabled = await setDesktopNotifications(true, "notification-welcome-message");
+    if (enabled) {
+      markNotificationWelcomeSeen();
+      $("notification-welcome-dialog").close();
+    }
+    button.disabled = false;
+    $("notification-welcome-not-now").disabled = false;
+  }
+  function dismissNotificationWelcome() {
+    markNotificationWelcomeSeen();
+    $("notification-welcome-dialog").close();
   }
   async function signOut() {
     state.subscriptions.forEach(s => state.supabase.removeChannel(s));
@@ -1727,6 +1775,9 @@
     $("notification-settings").addEventListener("click", openNotificationSettings);
     $("close-notification-settings").addEventListener("click", () => $("notification-settings-dialog").close());
     $("notification-settings-done").addEventListener("click", () => $("notification-settings-dialog").close());
+    $("enable-first-login-notifications").addEventListener("click", enableNotificationsFromWelcome);
+    $("notification-welcome-not-now").addEventListener("click", dismissNotificationWelcome);
+    $("notification-welcome-dialog").addEventListener("close", markNotificationWelcomeSeen);
     $("desktop-notifications-enabled").addEventListener("change", event => setDesktopNotifications(event.target.checked));
     $("push-notifications-button").addEventListener("click", togglePushNotifications);
     $("notification-sound-enabled").addEventListener("change", async event => {

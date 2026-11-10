@@ -8,7 +8,7 @@
   <title>ChatFlow — Real-time chat</title>
   <link rel="icon" href="./assets/icons/icon.svg" type="image/svg+xml">
   <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./css/style.css?v=16">
+  <link rel="stylesheet" href="./css/style.css?v=17">
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
@@ -200,6 +200,18 @@
     <div class="modal-actions"><button id="notification-settings-done" class="button subtle" type="button">Done</button></div>
   </dialog>
 
+  <dialog id="notification-welcome-dialog" class="modal notification-welcome-modal" aria-labelledby="notification-welcome-title">
+    <div class="notification-welcome-icon" aria-hidden="true"><svg class="ico"><use href="#i-bell"/></svg></div>
+    <p class="eyebrow">STAY IN THE LOOP</p>
+    <h2 id="notification-welcome-title">Turn on notifications?</h2>
+    <p class="muted">Get notified when someone sends you a message. You can change this anytime in notification settings.</p>
+    <p id="notification-welcome-message" class="notice" role="status" aria-live="polite"></p>
+    <div class="modal-actions">
+      <button id="notification-welcome-not-now" class="button subtle" type="button">Not now</button>
+      <button id="enable-first-login-notifications" class="button primary" type="button">Enable notifications</button>
+    </div>
+  </dialog>
+
   <dialog id="image-preview-dialog" class="image-preview-dialog">
     <button id="close-image-preview" class="icon-button" type="button" aria-label="Close image preview">×</button>
     <img id="image-preview-full" alt="Full-size conversation attachment">
@@ -235,6 +247,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./js/config.js"></script>
-  <script src="./js/app.js?v=16"></script>
+  <script src="./js/app.js?v=17"></script>
 </body>
 </html>
