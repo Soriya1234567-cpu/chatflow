@@ -9,7 +9,7 @@
     supabase: null, user: null, profile: null,
     profileDraft: { avatarFile: null, previewUrl: null, removeAvatar: false },
     savingProfile: false, avatarRefreshTimer: null, conversations: [], activeId: null,
-    messages: [], subscriptions: [], isRegister: false, deferredInstall: null,
+    messages: [], subscriptions: [], isRegister: false, deferredInstall: null, appInstalled: false,
     typingTimeout: null, typingChannel: null, toastTimeout: null,
     hasOlderMessages: false, loadingOlderMessages: false, reactions: [], readReceipts: [],
     selectedAttachment: null, attachmentPreviewUrl: null, recorder: null,
@@ -2172,6 +2172,7 @@
     }
   }
   function wireEvents() {
+    syncInstallGuideVisibility();
     document.addEventListener("click", event => {
       const profileTrigger = event.target.closest("[data-profile-id]");
       if (profileTrigger) {
@@ -2406,9 +2407,15 @@
     $("chat-search").addEventListener("input", renderConversations);
     $("chat-info").addEventListener("click", showConversationInfo);
     $("mobile-back").addEventListener("click", () => $("app-screen").classList.remove("mobile-chat-open"));
-    window.addEventListener("focus", updateServiceWorkerConversationState);
+    window.addEventListener("focus", () => {
+      updateServiceWorkerConversationState();
+      syncInstallGuideVisibility();
+    });
     window.addEventListener("blur", updateServiceWorkerConversationState);
-    document.addEventListener("visibilitychange", updateServiceWorkerConversationState);
+    document.addEventListener("visibilitychange", () => {
+      updateServiceWorkerConversationState();
+      syncInstallGuideVisibility();
+    });
     window.addEventListener("online", () => {
       loadConversations().catch(error => toast(friendlyError(error)));
       refreshUnreadCounts().catch(error => toast(friendlyError(error)));
@@ -2424,6 +2431,7 @@
     }
     window.addEventListener("beforeinstallprompt", e => {
       e.preventDefault();
+      if (isChatFlowInstalled()) return;
       state.deferredInstall = e;
       $("install-app").classList.remove("hidden");
       $("install-guide-prompt").classList.remove("hidden");
@@ -2431,11 +2439,29 @@
     $("install-app").addEventListener("click", () => promptInstallApp().catch(error => toast(`Could not start installation: ${friendlyError(error)}`)));
     $("install-guide-prompt").addEventListener("click", () => promptInstallApp().catch(error => toast(`Could not start installation: ${friendlyError(error)}`)));
     window.addEventListener("appinstalled", () => {
+      state.appInstalled = true;
+      $("install-app").classList.add("hidden");
+      $("install-guide-prompt").classList.add("hidden");
+      syncInstallGuideVisibility();
+      toast("ChatFlow installed.");
+    });
+    const displayMode = window.matchMedia("(display-mode: standalone)");
+    if (displayMode.addEventListener) displayMode.addEventListener("change", syncInstallGuideVisibility);
+    else if (displayMode.addListener) displayMode.addListener(syncInstallGuideVisibility);
+  }
+  function isChatFlowInstalled() {
+    return state.appInstalled || window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  }
+  function syncInstallGuideVisibility() {
+    const installed = isChatFlowInstalled();
+    $("open-install-guide").classList.toggle("hidden", installed);
+    $("open-install-guide-auth").classList.toggle("hidden", installed);
+    if (installed) {
       $("install-app").classList.add("hidden");
       $("install-guide-prompt").classList.add("hidden");
       $("install-guide-installed").classList.remove("hidden");
-      toast("ChatFlow installed.");
-    });
+      if ($("install-guide-dialog").open) $("install-guide-dialog").close();
+    }
   }
   function getInstallPlatform() {
     const userAgent = navigator.userAgent || "";
@@ -2444,17 +2470,20 @@
     return "other";
   }
   function openInstallGuide() {
+    if (isChatFlowInstalled()) {
+      syncInstallGuideVisibility();
+      return;
+    }
     const dialog = $("install-guide-dialog");
     const platform = getInstallPlatform();
-    const isInstalled = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
     dialog.dataset.platform = platform;
     $("install-guide-device").textContent = platform === "android"
       ? "For Android, Chrome is recommended. Follow the steps below to add ChatFlow to your Home screen."
       : platform === "ios"
         ? "For iPhone and iPad, use Safari and follow the steps below to add ChatFlow to your Home screen."
         : "Choose the instructions for your phone, or use your browser's install option if one is available.";
-    $("install-guide-installed").classList.toggle("hidden", !isInstalled);
-    $("install-guide-prompt").classList.toggle("hidden", !state.deferredInstall || isInstalled);
+    $("install-guide-installed").classList.add("hidden");
+    $("install-guide-prompt").classList.toggle("hidden", !state.deferredInstall);
     if (!dialog.open) dialog.showModal();
   }
   async function promptInstallApp() {
@@ -2465,7 +2494,10 @@
     $("install-guide-prompt").classList.add("hidden");
     await installPrompt.prompt();
     const { outcome } = await installPrompt.userChoice;
-    if (outcome === "accepted") $("install-guide-installed").classList.remove("hidden");
+    if (outcome === "accepted") {
+      state.appInstalled = true;
+      syncInstallGuideVisibility();
+    }
   }
   async function init() {
     wireEvents();
