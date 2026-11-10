@@ -278,6 +278,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .conversation-copy strong, .conversation-name { display: flex; width: 100%; max-width: 100%; align-items: center; gap: 6px; overflow: hidden; border: 0; padding: 0; background: transparent; color: var(--text); font-size: 13.5px; font-weight: 650; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-name .ico { color: var(--muted); }
 .conversation-preview, .conversation-copy > span { display: block; width: 100%; overflow: hidden; color: var(--muted); font-size: 12px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-copy > .contact-presence { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 10px; line-height: 1.2; }
+.contact-presence > i { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: #8992a2; }
+.contact-presence.is-online { color: var(--green); }
+.contact-presence.is-online > i { background: var(--green); box-shadow: 0 0 8px rgba(89, 207, 152, .45); }
 .conversation-item.active .conversation-preview { color: var(--text-secondary); }
 .conversation-meta { display: flex; min-width: 38px; flex-direction: column; align-items: flex-end; align-self: stretch; justify-content: center; gap: 7px; color: var(--muted); font-size: 10.5px; white-space: nowrap; }
 .remove-contact { display: inline-grid; width: 26px; height: 26px; flex: 0 0 auto; place-items: center; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); opacity: 0; transition: background var(--ease), color var(--ease), opacity var(--ease); }

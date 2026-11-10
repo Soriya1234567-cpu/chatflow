@@ -19,6 +19,7 @@
     readObserver: null, pendingReadMessageIds: new Set(), directorySearchTimer: null,
     directoryRequestId: 0, directorySuggestionRequestId: 0, directoryProfiles: new Map(),
     profileRequestId: 0, viewedProfileId: null, contactingProfileIds: new Set(), unreadCounts: new Map(),
+    contactPresence: new Map(), presenceHeartbeatTimer: null, presenceRefreshTimer: null, presenceWarningShown: false,
     groupAvatarDraft: { file: null, previewUrl: null, remove: false }, savingGroupDetails: false,
     addingGroupMembers: false, deletingGroup: false,
     notificationWelcomeUsers: new Set(),
@@ -31,6 +32,8 @@
   const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024;
   const MAX_AVATAR_SIZE = 5 * 1024 * 1024;
   const PROFILE_LOAD_TIMEOUT_MS = 15000;
+  const PRESENCE_HEARTBEAT_MS = 30000;
+  const PRESENCE_ONLINE_WINDOW_MS = 90000;
   const ATTACHMENT_BUCKET = "chat-attachments";
   const PROFILE_BUCKET = "avatars";
   const GROUP_AVATAR_BUCKET = "group-avatars";
@@ -48,6 +51,9 @@
     }
     if (/function public\.get_unread_message_counts/i.test(errorText)) {
       return "Unread counts are not configured yet. Run supabase/notifications.sql in the Supabase SQL Editor.";
+    }
+    if (/heartbeat_chat_presence|user_presence|last_seen_at/i.test(errorText)) {
+      return "Contact online status is not configured yet. Run supabase/contact_presence.sql in the Supabase SQL Editor.";
     }
     if (/set_direct_contact_hidden|hidden_at/i.test(errorText)) {
       return "Contact removal is not configured yet. Run supabase/contact_management.sql in the Supabase SQL Editor.";
@@ -128,6 +134,61 @@
     if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     if (days < 7) return d.toLocaleDateString([], { weekday: "short" });
     return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+  function getContactPresence(userId) {
+    const presence = state.contactPresence.get(userId);
+    const lastSeen = presence?.last_seen_at ? Date.parse(presence.last_seen_at) : NaN;
+    if (!Number.isFinite(lastSeen)) return { online: false, label: "Offline · last seen unknown" };
+    const elapsed = Math.max(0, Date.now() - lastSeen);
+    if (elapsed <= PRESENCE_ONLINE_WINDOW_MS) return { online: true, label: "Online" };
+    const offlineFor = elapsed - PRESENCE_ONLINE_WINDOW_MS;
+    if (offlineFor < 60000) return { online: false, label: "Offline · just now" };
+    const minutes = Math.floor(offlineFor / 60000);
+    if (minutes < 60) return { online: false, label: `Offline · ${minutes} ${minutes === 1 ? "minute" : "minutes"}` };
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return { online: false, label: `Offline · ${hours} ${hours === 1 ? "hour" : "hours"}` };
+    const days = Math.floor(hours / 24);
+    return { online: false, label: `Offline · ${days} ${days === 1 ? "day" : "days"}` };
+  }
+  function refreshContactPresenceViews() {
+    document.querySelectorAll("[data-presence-user]").forEach(element => {
+      const presence = getContactPresence(element.dataset.presenceUser);
+      element.classList.toggle("is-online", presence.online);
+      element.setAttribute("aria-label", presence.label);
+      const label = element.querySelector("span");
+      if (label) label.textContent = presence.label;
+    });
+    const active = state.conversations.find(conversation => conversation.id === state.activeId);
+    if (active?.type === "direct") {
+      const otherMember = active.members.find(member => member.user_id !== state.user.id);
+      const presence = getContactPresence(otherMember?.user_id).label;
+      $("active-subtitle").textContent = `${presence}${otherMember?.profile.status_message ? ` · ${otherMember.profile.status_message}` : ""}`;
+    }
+  }
+  function getConversationSubtitle(conversation, otherMember) {
+    if (conversation.type === "group") return `${conversation.memberCount} members · Group chat`;
+    const presence = getContactPresence(otherMember?.user_id).label;
+    return `${presence}${otherMember?.profile.status_message ? ` · ${otherMember.profile.status_message}` : ""}`;
+  }
+  async function updateMyPresence() {
+    if (!state.user || !navigator.onLine) return;
+    const { error } = await state.supabase.rpc("heartbeat_chat_presence");
+    if (error) throw error;
+  }
+  function startContactPresence() {
+    clearInterval(state.presenceHeartbeatTimer);
+    clearInterval(state.presenceRefreshTimer);
+    state.presenceWarningShown = false;
+    requestPresenceHeartbeat();
+    state.presenceHeartbeatTimer = setInterval(requestPresenceHeartbeat, PRESENCE_HEARTBEAT_MS);
+    state.presenceRefreshTimer = setInterval(refreshContactPresenceViews, 15000);
+  }
+  function requestPresenceHeartbeat() {
+    updateMyPresence().catch(error => {
+      if (state.presenceWarningShown) return;
+      state.presenceWarningShown = true;
+      toast(friendlyError(error));
+    });
   }
   function notice(id, message, success = false) {
     const el = $(id); if (!el) return;
@@ -520,6 +581,7 @@
     showApp();
     await loadConversations();
     subscribeToConversationChanges();
+    startContactPresence();
     updateServiceWorkerConversationState();
     const requestedConversation = new URL(window.location.href).searchParams.get("conversation");
     if (requestedConversation && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestedConversation)) {
@@ -576,6 +638,17 @@
     $("notification-welcome-dialog").close();
   }
   async function signOut() {
+    clearInterval(state.presenceHeartbeatTimer);
+    clearInterval(state.presenceRefreshTimer);
+    state.presenceHeartbeatTimer = null;
+    state.presenceRefreshTimer = null;
+    if (state.user && navigator.onLine) {
+      try {
+        await updateMyPresence();
+      } catch (error) {
+        toast(friendlyError(error));
+      }
+    }
     state.subscriptions.forEach(s => state.supabase.removeChannel(s));
     state.subscriptions = [];
     if (state.typingChannel) state.supabase.removeChannel(state.typingChannel);
@@ -591,6 +664,7 @@
     if (error) toast(friendlyError(error));
     state.user = null; state.profile = null; state.activeId = null;
     state.conversations = []; state.messages = [];
+    state.contactPresence.clear();
     state.unreadCounts.clear();
     state.seenIncomingMessageIds.clear();
     state.notificationPreferences = { desktop_enabled: false, push_enabled: false, sound_enabled: true, previews_enabled: true };
@@ -603,7 +677,7 @@
     if (error) throw error;
     const ids = (memberships || []).map(m => m.conversation_id);
     if (!ids.length) {
-      state.conversations = []; state.unreadCounts.clear(); renderConversations(); renderEmptyChat();
+      state.conversations = []; state.contactPresence.clear(); state.unreadCounts.clear(); renderConversations(); renderEmptyChat();
       await refreshUnreadCounts();
       return;
     }
@@ -614,6 +688,10 @@
       .select("conversation_id, user_id, role").in("conversation_id", ids);
     if (memberError) throw memberError;
     const memberIds = [...new Set((allMembers || []).map(m => m.user_id))];
+    const { data: presenceRows, error: presenceError } = await state.supabase.from("user_presence")
+      .select("user_id, last_seen_at").in("user_id", memberIds);
+    if (presenceError) throw presenceError;
+    state.contactPresence = new Map((presenceRows || []).map(row => [row.user_id, row]));
     let profiles = [];
     if (memberIds.length) {
       const result = await state.supabase.from("profiles")
@@ -679,6 +757,7 @@
       return `<div class="conversation-item ${c.id === state.activeId ? "active" : ""}">
         ${avatar}
         <span class="conversation-copy"><span>${title}</span>
+          ${member ? `<span class="contact-presence${getContactPresence(member.user_id).online ? " is-online" : ""}" data-presence-user="${escapeText(member.user_id)}" aria-label="${escapeText(getContactPresence(member.user_id).label)}"><i aria-hidden="true"></i><span>${escapeText(getContactPresence(member.user_id).label)}</span></span>` : ""}
           <button class="conversation-preview conversation-open" data-id="${escapeText(c.id)}" type="button">${escapeText(conversationPreview(c))}</button>
         </span>
         <span class="conversation-meta"><time>${escapeText(formatChatTime(c.lastMessage?.created_at))}</time>${unreadCount ? `<span class="conversation-unread" aria-label="${unreadCount} unread messages">${unreadCount > 99 ? "99+" : unreadCount}</span>` : ""}${member ? `<button class="remove-contact" data-remove-contact="${escapeText(c.id)}" data-contact-name="${escapeText(c.displayName)}" type="button" title="Remove ${escapeText(c.displayName)} from your contacts" aria-label="Remove ${escapeText(c.displayName)} from your contacts">${ico("trash", "ico tiny")}</button>` : ""}</span>
@@ -752,9 +831,7 @@
       $("active-title").removeAttribute("aria-label");
       $("active-avatar").setAttribute("aria-label", "Group conversation");
     }
-    $("active-subtitle").textContent = c.type === "group"
-      ? `${c.memberCount} members · Group chat`
-      : (otherMember?.profile.status_message || "Private conversation");
+    $("active-subtitle").textContent = getConversationSubtitle(c, otherMember);
     const avatarProfile = otherMember?.profile || (c.groupAvatarUrl ? { avatar_url: c.groupAvatarUrl } : null);
     applyAvatarStyles($("active-avatar"), avatarProfile, initials(c.displayName));
     $("chat-info").disabled = false;
@@ -1060,8 +1137,8 @@
     state.subscriptions.push(readChannel);
   }
   function subscribeToConversationChanges() {
-    state.subscriptions.filter(s => ["memberships", "profiles", "conversations", "incoming-messages", "incoming-reads"].includes(s.__kind)).forEach(s => state.supabase.removeChannel(s));
-    state.subscriptions = state.subscriptions.filter(s => !["memberships", "profiles", "conversations", "incoming-messages", "incoming-reads"].includes(s.__kind));
+    state.subscriptions.filter(s => ["memberships", "profiles", "conversations", "contact-presence", "incoming-messages", "incoming-reads"].includes(s.__kind)).forEach(s => state.supabase.removeChannel(s));
+    state.subscriptions = state.subscriptions.filter(s => !["memberships", "profiles", "conversations", "contact-presence", "incoming-messages", "incoming-reads"].includes(s.__kind));
     const channel = state.supabase.channel(`memberships:${state.user.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "conversation_members", filter: `user_id=eq.${state.user.id}` }, () => {
         loadConversations().then(() => {
@@ -1107,6 +1184,16 @@
       }).subscribe();
     profileChannel.__kind = "profiles";
     state.subscriptions.push(profileChannel);
+    const presenceChannel = state.supabase.channel(`contact-presence:${state.user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_presence" }, payload => {
+        const presence = payload.new;
+        if (presence?.user_id) state.contactPresence.set(presence.user_id, presence);
+        else if (payload.old?.user_id) state.contactPresence.delete(payload.old.user_id);
+        refreshContactPresenceViews();
+      })
+      .subscribe();
+    presenceChannel.__kind = "contact-presence";
+    state.subscriptions.push(presenceChannel);
   }
   function subscribeToTyping(conversationId) {
     state.typingChannel = state.supabase.channel(`typing:${conversationId}`, { config: { presence: { key: state.user.id }, broadcast: { self: false } } });
@@ -2410,13 +2497,16 @@
     window.addEventListener("focus", () => {
       updateServiceWorkerConversationState();
       syncInstallGuideVisibility();
+      requestPresenceHeartbeat();
     });
     window.addEventListener("blur", updateServiceWorkerConversationState);
     document.addEventListener("visibilitychange", () => {
       updateServiceWorkerConversationState();
       syncInstallGuideVisibility();
+      if (document.visibilityState === "visible") requestPresenceHeartbeat();
     });
     window.addEventListener("online", () => {
+      requestPresenceHeartbeat();
       loadConversations().catch(error => toast(friendlyError(error)));
       refreshUnreadCounts().catch(error => toast(friendlyError(error)));
     });

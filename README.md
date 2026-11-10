@@ -7,6 +7,7 @@ A real-time private and group chat starter built with HTML, CSS, vanilla JavaScr
 - Email/password sign-up and sign-in
 - Editable profiles with display name, username, bio, status, and managed avatars
 - Private conversations and named group chats with contact selection and owner-managed names/photos
+- Live online status and approximate last-seen duration for contacts
 - Remove a direct-chat contact from your own list without affecting their account or chat
 - Real-time message inserts without refresh
 - Message history stored in PostgreSQL
@@ -41,6 +42,7 @@ A real-time private and group chat starter built with HTML, CSS, vanilla JavaScr
 11. Run `supabase/notifications.sql` to add unread-count RPCs and private notification preference/subscription tables.
 12. Run `supabase/group_chat_management.sql` to add group photos and owner-only group detail updates.
 13. Run `supabase/contact_management.sql` to enable per-user removal and restoration of direct-chat contacts.
+14. Run `supabase/contact_presence.sql` to enable live online and last-seen status for conversation contacts.
 
 Never put a `service_role` or secret key in `js/config.js`, source control, or any browser code.
 
@@ -112,13 +114,14 @@ Each browser session must be signed into a different user. If email confirmation
 - The service worker caches the static app shell only.
 - Authentication, message history, and live messaging require a network connection. Offline caching does not make the backend or message sending work offline.
 - Unread counts reconcile from database read receipts after reconnect. Browser notifications require the page/service worker and permission; delivery while the PWA is closed requires the separately deployed Web Push backend below.
-- If you change static assets, bump `CACHE_NAME` in `service-worker.js` (for example `chatflow-shell-v22`).
+- If you change static assets, bump `CACHE_NAME` in `service-worker.js` (for example `chatflow-shell-v24`).
 
 ## 6. Messaging and attachment setup
 
 - Run the incremental `supabase/messaging_media.sql` migration after the original schema. It adds message metadata, reactions, read receipts, author-only edit/delete policies, a private attachment bucket, and Storage RLS policies.
 - Run `supabase/group_chat_management.sql` after `schema.sql` and the messaging/profile migrations. It adds the `group_avatar_path` column and private `group-avatars` bucket, a function allowing group members to add their direct-chat contacts, and an owner-only group deletion function. Group creators (not other members) can update group names/photos. Existing deployments must apply this migration before using group management.
 - Run `supabase/contact_management.sql` after `schema.sql`. It adds a per-user hidden state and a secured function for removing or restoring direct-chat contacts. Removing a contact only hides that direct conversation from the current user's list; it does not delete messages or change the other person's list. Opening that person's profile and starting a chat restores the conversation.
+- Run `supabase/contact_presence.sql` after `schema.sql` to show live online status and how long a contact has been offline. A 30-second heartbeat updates last-seen time; a contact is shown online for up to 90 seconds after their last heartbeat. Offline time is approximate, particularly if their browser is backgrounded or loses its connection.
 - If messaging media was already configured, rerun the updated `supabase/messaging_media.sql` to allow voice messages alongside photo and video uploads.
 - If `messaging_media.sql` was applied before its Storage policies were scoped by bucket, run `supabase/storage_policy_scope_fix.sql` once before `profile_discovery.sql`. The restrictive attachment policies must apply only to `chat-attachments`, not unrelated Storage buckets such as `avatars`.
 - The attachment picker accepts JPEG, PNG, and WebP photos plus MP4 and WebM videos. Files are limited to 25 MB and checked against their content signatures in the browser as well as bucket MIME/size limits.
