@@ -278,6 +278,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .conversation-preview, .conversation-copy > span { display: block; width: 100%; overflow: hidden; color: var(--muted); font-size: 12px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-item.active .conversation-preview { color: var(--text-secondary); }
 .conversation-meta { display: flex; min-width: 38px; flex-direction: column; align-items: flex-end; align-self: stretch; justify-content: center; gap: 7px; color: var(--muted); font-size: 10.5px; white-space: nowrap; }
+.remove-contact { display: inline-grid; width: 26px; height: 26px; flex: 0 0 auto; place-items: center; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); opacity: 0; transition: background var(--ease), color var(--ease), opacity var(--ease); }
+.conversation-item:hover .remove-contact, .remove-contact:focus-visible { opacity: 1; }
+.remove-contact:hover { background: rgba(255, 102, 120, 0.12); color: #ff8290; }
+.remove-contact:disabled { cursor: wait; opacity: 0.6; }
+.remove-contact .ico { width: 14px; height: 14px; }
+@media (hover: none) { .remove-contact { opacity: 1; } }
 .sidebar-footer { display: flex; min-height: 40px; align-items: center; gap: 8px; border-top: 1px solid var(--border); padding: 10px 6px 0; color: var(--muted); font-size: 11px; }
 
 /* Conversation surface */

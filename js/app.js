@@ -49,6 +49,9 @@
     if (/function public\.get_unread_message_counts/i.test(errorText)) {
       return "Unread counts are not configured yet. Run supabase/notifications.sql in the Supabase SQL Editor.";
     }
+    if (/set_direct_contact_hidden|hidden_at/i.test(errorText)) {
+      return "Contact removal is not configured yet. Run supabase/contact_management.sql in the Supabase SQL Editor.";
+    }
     if (/column .* does not exist|could not find the .*column|PGRST204/i.test(errorText)) {
       return "The profile database migration is missing. Run supabase/profile_avatars.sql in Supabase first, then refresh the app.";
     }
@@ -596,7 +599,7 @@
   }
   async function loadConversations() {
     const { data: memberships, error } = await state.supabase.from("conversation_members")
-      .select("conversation_id, role, joined_at").eq("user_id", state.user.id);
+      .select("conversation_id, role, joined_at").eq("user_id", state.user.id).is("hidden_at", null);
     if (error) throw error;
     const ids = (memberships || []).map(m => m.conversation_id);
     if (!ids.length) {
@@ -678,7 +681,7 @@
         <span class="conversation-copy"><span>${title}</span>
           <button class="conversation-preview conversation-open" data-id="${escapeText(c.id)}" type="button">${escapeText(conversationPreview(c))}</button>
         </span>
-        <span class="conversation-meta"><time>${escapeText(formatChatTime(c.lastMessage?.created_at))}</time>${unreadCount ? `<span class="conversation-unread" aria-label="${unreadCount} unread messages">${unreadCount > 99 ? "99+" : unreadCount}</span>` : ""}</span>
+        <span class="conversation-meta"><time>${escapeText(formatChatTime(c.lastMessage?.created_at))}</time>${unreadCount ? `<span class="conversation-unread" aria-label="${unreadCount} unread messages">${unreadCount > 99 ? "99+" : unreadCount}</span>` : ""}${member ? `<button class="remove-contact" data-remove-contact="${escapeText(c.id)}" data-contact-name="${escapeText(c.displayName)}" type="button" title="Remove ${escapeText(c.displayName)} from your contacts" aria-label="Remove ${escapeText(c.displayName)} from your contacts">${ico("trash", "ico tiny")}</button>` : ""}</span>
       </div>`;
     }).join("");
     list.querySelectorAll("[data-conversation-avatar]").forEach(element => {
@@ -690,6 +693,27 @@
       applyAvatarStyles(element, avatarProfile, initials(conversation?.displayName));
     });
     list.querySelectorAll("[data-id]").forEach(btn => btn.addEventListener("click", () => openConversation(btn.dataset.id)));
+    list.querySelectorAll("[data-remove-contact]").forEach(btn => btn.addEventListener("click", () => {
+      removeContact(btn.dataset.removeContact, btn.dataset.contactName, btn);
+    }));
+  }
+  async function removeContact(conversationId, contactName, button) {
+    if (!conversationId || !window.confirm(`Remove ${contactName} from your contacts? This only removes the conversation from your list; it does not affect the other person's account.`)) return;
+    button.disabled = true;
+    try {
+      const { error } = await state.supabase.rpc("set_direct_contact_hidden", {
+        target_conversation: conversationId,
+        is_hidden: true
+      });
+      if (error) throw error;
+      state.conversations = state.conversations.filter(conversation => conversation.id !== conversationId);
+      if (state.activeId === conversationId) renderEmptyChat();
+      else renderConversations();
+      toast(`${contactName} removed from your contacts.`);
+    } catch (error) {
+      button.disabled = false;
+      toast(friendlyError(error));
+    }
   }
   function renderEmptyChat() {
     if (state.readObserver) state.readObserver.disconnect();
@@ -1695,6 +1719,11 @@
       });
       if (error) throw error;
       if (!conversationId) throw new Error("ChatFlow could not open this conversation.");
+      const { error: restoreError } = await state.supabase.rpc("set_direct_contact_hidden", {
+        target_conversation: conversationId,
+        is_hidden: false
+      });
+      if (restoreError) throw restoreError;
       if ($("view-profile-dialog").open) $("view-profile-dialog").close();
       if ($("directory-dialog").open) $("directory-dialog").close();
       await loadConversations();

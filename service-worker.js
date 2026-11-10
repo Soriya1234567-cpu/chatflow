@@ -1,10 +1,10 @@
-const CACHE_NAME = "chatflow-shell-v20";
+const CACHE_NAME = "chatflow-shell-v21";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./css/style.css?v=20",
+  "./css/style.css?v=21",
   "./js/config.js",
-  "./js/app.js?v=20",
+  "./js/app.js?v=21",
   "./manifest.json",
   "./assets/icons/icon.svg"
 ];
